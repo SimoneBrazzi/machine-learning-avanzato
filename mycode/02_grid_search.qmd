@@ -1,0 +1,192 @@
+--- 
+author: 'Simone Brazzi'
+date: '2026-01-08'
+theme:
+  dark: darkly
+  light: flatly
+execute:
+  eval: true
+--- 
+
+# 1. Theory
+
+Hyperparameter optimization made with a quantitative and automated process. It is a trial and error approach.
+
+## 1.1. Grid Search
+
+Hyperparameter grid of parameters, combined and tested.
+- Exaustive research.
+- Computational demanding.
+
+## 1.2. Random Search
+
+It is not the complete hyperparameter space, but a random subset.
+- Quicker than the GS.
+- Useful with big datasets.
+- Possible sub optimal performance.
+
+## 1.3. Bayesian Search
+
+It maximize a black-box function:
+- Grid for categorical parameters.
+- Distribution for continuous parameters.
+- Posterior distribution of the possible combinations, to find the optimal result of this distribution, considering the hyperparameters.
+
+# 2. Practice
+
+## 2.1. Grid Search Example
+
+
+```{python}
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import accuracy_score
+from sklearn.svm import SVC  # support vector classifier
+
+
+def gridsearch_classification(x, y, cv, grid):
+
+    xtrain, xtest, ytrain, ytest = train_test_split(
+        x, y, test_size=0.2, random_state=42
+    )
+
+    model = SVC(probability=True, random_state=42)
+    grid_search = GridSearchCV(model, grid, cv=cv, scoring="accuracy", n_jobs=-1)
+
+    grid_search.fit(xtrain, ytrain)
+
+    best_params = grid_search.best_params_
+    best_accuracy = grid_search.best_score_
+    best_model = grid_search.best_estimator_
+
+    ytest_pred = best_model.predict(xtest)
+    accuracy_test = accuracy_score(ytest, ytest_pred)
+
+    print(f"Best Hyperparameters: {best_params}")
+    print(f"Best Accuracy: {100 * best_accuracy:.2f}%")
+    print(f"Test Accuracy: {100 * accuracy_test:.2f}%")
+
+    return
+```
+
+```{python}
+iris = load_iris()
+x, y = iris.data, iris.target
+
+grid = {
+    "C": [0.1, 1, 10, 100],
+    "gamma": ["scale", "auto"],
+    "kernel": ["linear", "rbf", "poly", "sigmoid"],
+}
+gridsearch_classification(x, y, cv=5, grid=grid)
+```
+
+## 2.2. Random Search Example
+
+
+```{python}
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.metrics import accuracy_score
+from sklearn.svm import SVC  # support vector classifier
+
+
+def randomsearch_classification(x, y, cv, grid, n_iter):
+
+    xtrain, xtest, ytrain, ytest = train_test_split(
+        x, y, test_size=0.2, random_state=42
+    )
+
+    model = SVC(probability=True, random_state=42)
+    grid_search = RandomizedSearchCV(
+      estimator=model,
+      param_distributions=grid,
+      n_iter=n_iter,
+      scoring="accuracy",
+      cv=cv,
+      return_train_score=True
+  )
+
+    grid_search.fit(xtrain, ytrain)
+
+    best_params = grid_search.best_params_
+    best_accuracy = grid_search.best_score_
+    best_model = grid_search.best_estimator_
+
+    ytest_pred = best_model.predict(xtest)
+    accuracy_test = accuracy_score(ytest, ytest_pred)
+
+    print(f"Best Hyperparameters: {best_params}")
+    print(f"Best Accuracy: {100 * best_accuracy:.2f}%")
+    print(f"Test Accuracy: {100 * accuracy_test:.2f}%")
+
+    return
+```
+
+```{python}
+iris = load_iris()
+x, y = iris.data, iris.target
+
+grid = {
+    "C": [0.1, 1, 10, 100],
+    "gamma": ["scale", "auto"],
+    "kernel": ["linear", "rbf", "poly", "sigmoid"],
+}
+
+randomsearch_classification(x, y, cv=5, grid=grid, n_iter=10)
+```
+
+## 1.3. Bayesian Search Example
+
+
+
+```{python}
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.svm import SVC  # support vector classifier
+from skopt import BayesSearchCV
+
+def bayesian_search_classification(x, y, cv, search_space, n_iter):
+
+    xtrain, xtest, ytrain, ytest = train_test_split(
+        x, y, test_size=0.2, random_state=42
+    )
+    model = SVC(probability=True, random_state=42)
+
+    bayes_search = BayesSearchCV(
+        model,
+        search_space,
+        n_iter=n_iter,
+        cv=cv,
+        scoring="accuracy",
+        return_train_score=True,
+        random_state=42
+    )
+    bayes_search.fit(xtrain, ytrain)
+
+    best_model = bayes_search.best_estimator_
+    best_params = bayes_search.best_params_
+    best_score = bayes_search.best_score_
+
+    ytest_pred = best_model.predict(xtest)
+    accuracy_test = accuracy_score(ytest, ytest_pred)
+
+    print(f'best Hyperparameters: {best_params}')
+    print(f'best Accuracy: {100 * best_score:.2f}%')
+    print(f'best Test Accuracy: {100 * accuracy_test:.2f}%')
+
+    return
+
+iris = load_iris()
+x, y = iris.data, iris.target
+
+search_space = {
+    'C' : (1e-6, 1e+6, 'log-uniform'), # distribution
+    'gamma' : ( 'scale', 'auto' ),
+    'kernel' : ( 'linear', 'rbf', 'poly', 'sigmoid' )
+}
+
+bayesian_search_classification(x, y, cv=5, search_space=search_space, n_iter=10)
+```
+

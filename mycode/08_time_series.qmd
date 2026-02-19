@@ -1,0 +1,1303 @@
+---
+author: "Simone Brazzi"
+title: "Time Series"
+date: 2026-02-03
+theme:
+  dark: darkly
+  light: lightly
+execute:
+  eval: true
+---
+
+# Theory
+
+## Introduction -  Practice
+
+```{python}
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+from statsmodels.tsa.seasonal import seasonal_decompose
+
+import kagglehub
+path = kagglehub.dataset_download("arpitagupta11/superstore-csv")
+path+"/superstore.csv"
+
+```
+
+```{python}
+df = pd.read_csv(path+"/superstore.csv", encoding='latin1', index_col="Order Date", parse_dates=True)
+df.head()
+
+df = df[df['Category']=='Furniture'][['Sales', 'Profit']]
+df.head()
+```
+
+```{python}
+df.dtypes
+df.describe()
+df.index
+```
+
+```{python}
+dfg = df.groupby('Order Date').agg({"Sales":"sum", "Profit":"sum"})
+dfg.index
+
+dfg.sort_index()
+
+
+dfg = dfg.resample('MS').sum() # month start
+dfg.head()
+```
+
+```{python}
+fig, ax = plt.subplots(figsize=(12, 7))
+ax.plot(dfg.index, dfg.Sales, marker="o", linestyle="-", color="g", label="Sales")
+ax.plot(dfg.index, dfg.Profit, marker="o", linestyle="-", color="b", label="Profit")
+ax.set_title("Sales and Profit Time Series")
+ax.set_xlabel("Date")
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+flights = sns.load_dataset('flights')
+flights
+
+
+fig, ax = plt.subplots(figsize=(12, 7))
+ax.plot(flights.index, flights.passengers, color='b', label='passengers')
+ax.set_ylabel("Passengers")
+plt.tight_layout()
+plt.show()
+
+result = seasonal_decompose(flights.passengers, model='multiplicative', period=12)
+fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(12, 15))
+
+for ax, r, c, l in zip(
+  axs.flat,
+  [result.observed, result.trend, result.seasonal, result.resid],
+  ['b', 'g', 'r', 'black'],
+  ['Observed', 'Trend', 'Seasonal', 'Residuals']
+):
+
+  ax.plot(flights.index, r, color=c, label=l)
+  ax.set_ylabel(l)
+  ax.legend()
+
+plt.tight_layout()
+plt.show()
+```
+
+## Preprocessing
+
+### Missing values
+- mean
+- median
+- linear interpolation -> forward or backward fill
+- polynomial interpolation
+- seasonal decomposition
+
+### Outlier
+- statistical method -> z-score or IQR.
+- ml method -> isolation forest, DBSCAN.
+
+imputation or drop.
+
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import zscore
+
+df = pd.read_csv(path+"/superstore.csv", encoding='latin1', index_col="Order Date", parse_dates=True)
+df = df[df['Category']=='Furniture']['Profit']
+dfg = df.groupby('Order Date').sum().reset_index()
+dfg = dfg.sort_index()
+dfg.head()
+```
+
+```{python}
+serie = dfg['Profit'][1:500]
+serie
+fig, ax = plt.subplots(figsize=(12, 7))
+ax.plot(serie.index, serie)
+ax.set_title("Profit Time Series")
+ax.set_xlabel("Date")
+ax.set_ylabel("Profit")
+plt.tight_layout()
+plt.show()
+```
+
+Missing values
+
+```{python}
+serie.iloc[20:30] = np.nan
+fig, ax = plt.subplots(figsize=(12, 7))
+ax.plot(serie.index, serie)
+ax.set_title("Profit Time Series with NAN")
+ax.set_xlabel("Date")
+ax.set_ylabel("Profit")
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+serie = dfg['Profit'][1:500]
+serie.iloc[20:30] = np.nan
+filled = serie.ffill()
+
+fig, ax = plt.subplots(figsize=(12, 7))
+ax.plot(filled.index[:100], filled[:100], color='r', label='Filled')
+ax.plot(serie.index[:100], serie[:100], color='b', label='Missing values')
+ax.set_title("Profit Time Series with NAN forward filled")
+ax.set_xlabel("Date")
+ax.set_ylabel("Profit")
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+serie = dfg['Profit'][1:500]
+serie.iloc[20:30] = np.nan
+filled = serie.fillna(np.mean(serie))
+
+fig, ax = plt.subplots(figsize=(12, 7))
+ax.plot(filled.index[:100], filled[:100], color='r', label='Filled')
+ax.plot(serie.index[:100], serie[:100], color='b', label='Missing values')
+ax.set_title("Profit Time Series with NAN filled with mean")
+ax.set_xlabel("Date")
+ax.set_ylabel("Profit")
+plt.tight_layout()
+plt.show()
+```
+
+Outlier
+
+```{python}
+z = np.abs(zscore(filled))
+outliers = (z > 3)
+
+cleaned = filled.copy()
+cleaned[outliers] = cleaned.rolling(window=5).mean()[outliers].astype('float32')
+
+fig, ax = plt.subplots(figsize=(12, 7))
+ax.plot(filled.index, filled, color='red', label='Original')
+ax.plot(cleaned.index, cleaned, color='blue', label='Outlier removed')
+ax.legend()
+plt.show()
+```
+Interpolation
+
+```{python}
+serie = dfg['Profit'][1:500]
+serie.iloc[20:30] = np.nan
+filled = serie.interpolate(method='linear')
+
+fig, ax = plt.subplots(figsize=(12, 7))
+ax.plot(filled.index[:100], filled[:100], color='r', label='Filled')
+ax.plot(serie.index[:100], serie[:100], color='b', label='Missing values')
+ax.set_title("Profit Time Series with NAN filled with mean")
+ax.set_xlabel("Date")
+ax.set_ylabel("Profit")
+plt.tight_layout()
+plt.show()
+```
+## Exercise
+
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+dj = sns.load_dataset('dowjones')
+dj.head()
+
+dj["Date"] = pd.to_datetime(dj.Date)
+
+dj.Price.plot(title="Dow Jones", figsize=(10, 7))
+# plt.show()
+```
+
+```{python}
+# add missing values
+np.random.seed(42)
+missing_idx = np.random.choice(dj.index, size=20, replace=False)
+dj.loc[missing_idx, 'Price'] = np.nan
+plt.figure(figsize=(12, 6))
+plt.plot(dj.Date, dj.Price, linewidth=2)
+plt.show()
+
+# add outliers
+outlier_idx = np.random.choice(dj.index, size=5, replace=False)
+dj.loc[outlier_idx, 'Price'] = dj.loc[outlier_idx, 'Price'] * 5
+plt.figure(figsize=(12, 6))
+plt.plot(dj.Date, dj.Price, linewidth=2)
+plt.show()
+```
+
+```{python}
+dj.isna().sum()
+dj.info()
+dj.describe()
+
+plt.plot(dj.Date, dj.Price)
+plt.show()
+```
+
+```{python}
+sns.boxplot(dj.Price)
+plt.show()
+```
+
+```{python}
+from scipy.stats import zscore
+
+dj['price'] = dj.Price.interpolate(method='linear')
+
+dj['rolling_mean'] = dj.price.rolling(12).mean().bfill()
+dj['rolling_median'] = dj.price.rolling(12).median().bfill()
+dj.head()
+```
+
+```{python}
+dj['residuals'] = dj.price - dj.rolling_mean # residuals = real - mean
+dj['zscore'] = zscore(dj.residuals.dropna())
+dj.head()
+
+dj.zscore.describe()
+
+outliers = dj[np.abs(dj.zscore) > 3]
+dj['price_clean'] = dj.price
+dj.loc[outliers.index, 'price_clean'] = dj.loc[outliers.index, 'rolling_median']
+```
+
+```{python}
+fig, ax = plt.subplots(figsize=(15, 12))
+ax.plot(dj.Date, dj.price_clean)
+plt.show()
+```
+
+
+```{python}
+df = dj[['Date', 'price_clean']].rename(columns={'Date' : 'date', 'price_clean' : 'price'})
+df.head()
+df = df.set_index('date')
+
+
+df['rolling_12'] = df.price.rolling(12).mean()
+df['rolling_24'] = df.price.rolling(24).mean()
+
+fig, axs = plt.subplots(ncols=1, nrows=3, figsize=(12, 15))
+
+for ax, col in zip(axs.flat, ['price', 'rolling_12', 'rolling_24']):
+  ax.plot(df.index, df[col])
+  ax.set_title(f"Time series {col}")
+plt.tight_layout()
+plt.show()
+```
+
+
+```{python}
+fig, ax = plt.subplots(figsize=(15, 12))
+ax.plot(df.index, df.price, label='price')
+ax.plot(df.index, df.rolling_12, label='rolling mean 12')
+ax.plot(df.index, df.rolling_24, label='rolling mean 24')
+ax.legend()
+plt.show()
+```
+
+same concept using shif to lag data. 
+
+
+## Stationarity
+
+Stationarity when statistical properties (mean, variance, autocorrelation) are constant during time.
+- *Low*
+
+  - $E[X_t] = \mu,\ \forall t$ -> constant mean.
+
+  - $Var[X_t] = \sigmaˆ2,\ \forall t$ -> constant var.
+  
+  - $Cov(X_t, X_{t+h}) = \gamma (h),   \forall t,\ h$ -> autocovar depends only by h, the lag.
+
+- *Strong* -> join distribution $X_{t_1}, X_{t_2}, ... X_{t_n}$ invariant to traslation over time.
+
+Why it is so important?
+
+- *Predictive modelling*, for example with ARIMA, because this type of model assumes a stable data generation.
+
+- *Transformation techniques*, like differentiation, trend removal, log transformations.
+
+How to?
+
+1. Visualize data to understand if there is stationarity or not.
+
+2. Transformations:
+
+  - Diff.
+    
+    - Simple diff: $y'_t = y_t - t_{t-1}$ .
+    - Seasonal diff: $y'_t = y_t - y_{t-s}$
+
+  - BoxCox transformation.
+
+    $$
+    y(\lambda) = 
+    \begin{cases}
+    \frac{yˆ{\lambda} - 1}{\lambda},\ if \lambda \neq 0;\\
+    \log y,\ if \lambda = 0.
+    \end{cases}
+    $$
+
+  - Detrend: estimate and removal of the series trend.
+
+3. Stationarety statistical test
+
+- *A*ugmented *D*ickey-*F*uller: $\Delta Y_t = \alpha + \beta t + \gamma Y_{t-1} + \sum_{i=1}^{p} \delta_i \Delta Y_{t-i} + \epsilon_t$, where reject $H_0$ : not stationary if p < 0.05.
+
+  - *K*wiatkowski-*P*hilips-*S*chidt-*S*hin: $Y_t = \mu + r_t + \epsilon_t$, where $r_t$ is a random walk.
+
+## Practice
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from statsmodels.tsa.stattools import adfuller
+from scipy import stats
+
+flights = sns.load_dataset('flights')
+flights
+df = flights['passengers'].copy()
+df.head()
+
+fig, ax = plt.subplots(figsize=(12, 10))
+ax.plot(df.index, df)
+plt.show()
+```
+
+```{python}
+def make_adf(x):
+  
+  adf = adfuller(x)
+
+  print(f"Statistic: {adf[0]}")
+  print(f"p-value: {adf[1]}")
+
+  if adf[1] <= 0.05:
+    print('Stationary time series')
+  else:
+    print("Time sereis NOT stationary")
+
+results = make_adf(df)
+```
+
+```{python}
+rolling_mean = df.rolling(12).mean()
+rolling_var = df.rolling(12).var()
+
+fig, ax = plt.subplots(ncols=1, nrows=2, figsize=(12, 10))
+ax[0].plot(rolling_mean, color='r', label='rolling mean')
+ax[1].plot(rolling_var, color='g', label='rolling var')
+plt.show()
+```
+
+```{python}
+transformed, lmbda = stats.boxcox(df)
+lmbda
+```
+
+[!Note] The BoxCox transformation stabilize variance.
+
+
+```{python}
+log_df = np.log(df) # a lambda close to 0 like 0.148 is similar to a log transformation
+
+log_df
+fig, ax = plt.subplots(figsize=(12, 10))
+ax.plot(log_df.index, log_df)
+plt.show()
+```
+
+
+```{python}
+diff_df = df.diff().dropna()
+
+fig, ax = plt.subplots(figsize=(12, 10))
+plt.plot(diff_df.index, diff_df)
+plt.show()
+```
+
+Lets check if the series is now stationary.
+
+```{python}
+make_adf(diff_df)
+```
+
+It is not stationary, but we are very close. There is also seasonality.
+
+```{python}
+seas_diff_df = diff_df.diff(12).dropna() # differentiation at 12 period
+
+fig, ax = plt.subplots(figsize=(12, 10))
+plt.plot(seas_diff_df.index, seas_diff_df)
+plt.show()
+
+
+make_adf(seas_diff_df)
+```
+
+Doing this second diff to remove seasonality, we now have a stationary time series. It is time to create the final series with all the transformations.
+
+```{python}
+ts = flights.passengers
+ts.head()
+
+plt.plot(ts.index, ts)
+plt.show()
+```
+
+```{python}
+from statsmodels.tsa.stattools import adfuller
+
+print(
+  f"""
+    {'Stationary ts' if adfuller(ts)[1] <= 0.05 else 'Not stationary ts'}
+    p-value: {adfuller(ts)[1] :.4f}
+  """)
+```
+
+```{python}
+fig, ax = plt.subplots(ncols=1, nrows=4, figsize=(7, 10))
+ax[0].plot(ts.index, ts, label='Original', color='blue')
+ax[0].legend()
+ax[1].plot(ts.index, np.log(ts), label='Log transformation', color='orange')
+ax[1].legend()
+ax[2].plot(ts.diff(1).dropna().index, np.log(ts).diff(1).dropna(), label='Diff_1', color='red')
+ax[2].legend()
+ax[3].plot(ts.diff(1).diff(12).dropna().index, np.log(ts).diff(1).diff(12).dropna(), label='Remove seasonality', color='green')
+ax[3].legend()
+plt.tight_layout()
+plt.show()
+
+```
+
+## Exercise
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from statsmodels.tsa.stattools import adfuller
+from scipy.stats import boxcox
+
+dj = sns.load_dataset('dowjones')
+dj = dj.reset_index().drop('index', axis=1)
+dj.columns = dj.columns.str.lower()
+dj = dj.set_index('date')
+dj.head()
+```
+
+```{python}
+transformed, lmbda = boxcox(dj.price)
+dj['price_log'] = transformed
+dj.head()
+```
+
+
+```{python}
+fig, ax = plt.subplots(ncols=1, nrows=5, figsize=(7, 12))
+ax[0].plot(dj.index, dj.price, label="original")
+ax[1].plot(dj.index, dj.rolling(12).price.mean(), label="rolling")
+ax[2].plot(dj.index, dj.price_log, label='BoxCox')
+ax[3].plot(dj.index, dj.price_log.diff(), label="Diff")
+ax[4].plot(dj.index, dj.price_log.diff().diff(12), label="Remove seasonality")
+
+adfuller(dj.price_log.diff().dropna())
+
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+pvalue = adfuller(dj.price_log)[1]
+if pvalue <= 0.05:
+  print(f"Stationary | pvalue: {pvalue} :.4f")
+else:
+  print(f"Not stationary | pvalue: {pvalue} :.4f")
+```
+
+# Forecasting
+
+## Classic model
+
+### AR model
+
+*A*uto  *R*egressive model *AR(p)*. It is a regression on itself.
+
+$y_t = c + \sum_{i=1}^{p} \theta y_{t-i} + \epsilon_t$
+
+$\theta$: autoregressive coeficcients.
+p: number of lagged elements.
+$\epsilon_t$: causal error at time t.
+c: intercept.
+
+### MA model
+
+*M*oving *A*verage. Value at time t linearly dependent to previous forecasting errors.
+
+$y_t = c + \sum_{i=1}^_{q} \theta_{i}\epsilon_{t-i}$
+
+$\theta_i$: moving avg coefficients.
+q: n lagged elements for MA.
+$\ epsilon_t$: causal errors at time t.
+c: intercept.
+
+### ACF and PACF
+
+The selection of the parameters p and q depends on this models.
+
+#### AR model
+
+- PACF: where data are 0.
+- ACF: decay to 0 esponentially or sinusoidally.
+
+#### MA model
+
+- ACF: where data are 0.
+- PACF: decay to 0 esponentially or sinusoidally.
+
+#### ARMA model
+
+- Both plots decay.
+- First lag on ACF depend on q from the MA model. After q, ACF decayment.
+- First p lag on PACF depend on AR model. After p, PACF decay.
+
+### ARIMA
+
+*A*uto *R*egressive *I*ntegrated *M*oving *A*verage. Useful for non stationary data. It adds differentiation.
+
+$y'_t = c + \sum_{i=1}_{q} \theta_i y'_{t-i} + \epsilon_t$
+
+- p: order of the autoregressive componenet.
+- d: order of differentiation. Times of diff needed for stationarety.
+- q: order of the moving avg component.
+
+It uses ACF, PACF and also:
+
+#### AIC
+
+*A*kaike *I*nformation *C*riterion.
+
+$AIC = 2\log(L) + 2(p + q + k + 1)$
+
+#### BIC
+
+*B*ayesian *I*nformation *C*riterion.
+
+$BIC = AIC + [\log(T) - 2](p + q + k + 1)$
+
+### SARIMA
+
+*S*easonal ARIMA. It extend the ARIMA model to non stationary situations.
+
+SARIMA(p, q, d)(P, Q, D, s)
+
+- p, non seasonal component order.
+- P, seasonal component order.
+...
+- s, seaonality period.
+
+$(1 - \theta B)(1 - \Sigma B^4)(1 - B)( 1 - Bˆ4)y_t = (1 + \Theta B)(1 + \Theta Bˆ4)\ epsilon_t$
+
+## Practice
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+flights = sns.load_dataset('flights')
+df = flights['passengers']
+df.plot(title='Flihts time series', figsize=(10, 7))
+plt.show()
+```
+
+```{python}
+df_log = np.log(df)
+df_log_diff = df_log.diff().diff(12).dropna()
+
+fig, ax = plt.subplots(1, 2, figsize=(12, 7))
+plot_acf(
+  x=df_log_diff,
+  ax=ax[0],
+  lags=40
+)
+plot_pacf(
+  x=df_log_diff,
+  ax=ax[1],
+  lags=40
+)
+plt.show()
+```
+
+```{python}
+arima = ARIMA(df_log, order=[1, 1, 1]) # this makes the diff. 1 AR, 1 diff, 1 MA
+arima_results = arima.fit()
+arima_results.summary()
+```
+
+```{python}
+arima = ARIMA(df_log, order=[2, 1, 2], trend='t') # this makes the diff. 1 AR, 1 diff, 1 MA
+arima_results = arima.fit()
+arima_results.summary()
+```
+
+How to choose? As always, a test set solve the overfitting and generalize the results.
+
+```{python}
+forecast = arima_results.get_forecast(steps=24) # get the following 24 periods 
+pred_mean = forecast.predicted_mean
+
+plt.figure(figsize=(12, 10))
+plt.plot(df_log, label='Original')
+plt.plot(pred_mean.index, pred_mean, label='ARIMA', color='red')
+plt.title("ARIMA (2, 1, 2) forecast'")
+plt.show()
+```
+SARIMA
+
+```{python}
+sarima = SARIMAX(df_log, order=(1,1,1), seasonal_order=(0,1,1,12))
+sarima_result = sarima.fit()
+sarima_result.summary()
+
+forecast = sarima_result.get_forecast(steps=24) # get the following 24 periods 
+pred_mean = forecast.predicted_mean
+
+plt.figure(figsize=(12, 10))
+plt.plot(df_log, label='Original')
+plt.plot(pred_mean.index, pred_mean, label='SARIMA', color='red')
+plt.title("SARIMA (2, 1, 2) (0,1,1,1c) forecast'")
+plt.show()
+```
+
+## Exercise
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.api as sm
+
+from skforecast.datasets import fetch_dataset
+
+df = fetch_dataset(name='fuel_consumption', raw=True)
+df = df[['Fecha', 'Gasolinas']]
+df['date'] = pd.to_datetime(df.Fecha)
+ts = df.set_index('date')['Gasolinas']
+ts
+```
+
+```{python}
+fig, ax = plt.subplots(figsize=(12, 10))
+ax.plot(ts.index, ts)
+plt.show()
+```
+
+### EDA
+
+#### Trend
+
+```{python}
+from statsmodels.tsa.stattools import adfuller
+
+def adf_test(x):
+
+  result = adfuller(x)
+
+  if result[1] <= 0.05:
+    print(f"Reject H0: Time series is STATIONARY")
+  else:
+    print("Failed to reject H0: Time series is NON-STATIONARY")
+
+  return result
+
+adf_test(ts)
+```
+
+```{python}
+adf_test(ts.diff().dropna())
+```
+
+```{python}
+fig, ax = plt.subplots(1, 2, figsize=(12, 10))
+ax[0].plot(np.log(ts).diff(1).diff(12).dropna(), label="Log and diff", color="red")
+ax[1].plot(ts.index, ts, label='Original')
+ax[0].legend()
+ax[1].legend()
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+adf_test(np.log(ts).diff(1).diff(12).dropna())
+```
+
+```{python}
+from scipy.stats import boxcox
+
+transformed, lmbda = boxcox(ts)
+
+ts_lambda = ts.copy()
+ts_lambda.iloc[:] = transformed
+```
+
+```{python}
+fig, ax = plt.subplots(3, 1, figsize=(12, 10))
+ax[0].plot(np.log(ts).diff(1).diff(12).dropna(), label="Log and diff", color="red")
+ax[1].plot(ts_lambda.diff(1).diff(12).dropna(), label="transformed lambda 0.75", color="green")
+ax[2].plot(ts.index, ts, label='Original')
+ax[0].legend()
+ax[1].legend()
+ax[2].legend()
+plt.tight_layout()
+plt.show()
+
+```
+#### Models
+
+
+```{python}
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+
+fig, ax = plt.subplots(4, 1, figsize=(12, 10))
+ax[0].plot(ts.index, ts, label="Original")
+ax[1].plot(np.log(ts).diff(1).diff(12).dropna(), label="Transformed")
+plot_acf(x=np.log(ts).diff(1).diff(12).dropna(),ax=ax[2], lags=60)
+plot_pacf(x=np.log(ts).diff(1).diff(12).dropna(), ax=ax[3], lags=60)
+for a in ax.flat:
+  a.legend()
+plt.tight_layout()
+plt.show()
+```
+
+*S*easonal *A*uto*R*egressive *I*ntegrated *M*oving *A*verage.
+
+$SARIMA(p, d, q)(P, D, Q, s)$, where:
+
+- *p* = autoregressive order.
+- *d* = number of non-seasonal differences.
+   n of regular differences applied to make it stationary.
+- *q* = moving average order.
+- *P* = seasonal autoregressive order.
+- *D* = seasonal differencing order.
+    n of seasonal differences.
+- *Q* = seasonal movin average order.
+- *s* = length of the seasonal period. Eg.: 12 for monthly data.
+
+It is important to remove seasonality with seasonal differencing to make data stationary.
+
+$$
+(1 - \phi_1 B)(1 - \Phi_1 B^s)(1 - B)(1 - B^s)y_t = (1 + \theta_1 B)(1 + \Theta_1 B^s)\epsilon_t
+$$
+
+*$y_t$* = observed time series at time t.
+*B* = backshift operator or lag.
+*$\phi_1$* = non-seasonal autoregressive coefficient.
+*$\Phi_1$* = seasonal autoregresive coefficient.
+*$\theta_1$* = non-seasonal moving average coefficient.
+*$\Theta_1$* = seasonal moving average coefficient.
+*s* = seasonal period.
+*$\epsilon_t$* = white noise error term.
+
+
+*ACF* measures the *correlation* between the time series and its lagged values.
+
+- *AR* if *decays gradually*.
+- *MA* if *cuts off sharply*.
+
+*PACF* measures the *correlation* between the timne series and its lagged values, * controlling* for the correlations at intermediate lags.
+
+- *AR* if *cuts off sharply*.
+- *MA* if *decays gradually*.
+
+* non seasonal -> p, d, q.
+* seasonal = P, D, Q, s.
+d and D depends on the number of differentiation I had to do to make the serie stationary.
+s depends on the data: for monthly data, 12.
+number of NON SEASONAL components (1,2,3, ...):
+q depends on ACF.
+p depends on PACF.
+number of SEASONAL components (12, 24, ...):
+Q depends on ACF
+P depends on PACF
+
+```{python}
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+p, d, q = 2, 1, 1
+P, D, Q, s = 2, 1, 1, 12 
+sarima = SARIMAX( np.log(ts), order=(p,d,q), seasonal_order=(P, D, Q, s))
+
+results = sarima.fit()
+print(results.summary())
+```
+
+
+```{python}
+fig, ax = plt.subplots(4, 1, figsize=(12, 10))
+ax[0].plot(ts_lambda.index, ts_lambda, label="Original")
+ax[1].plot(ts_lambda.diff(1).diff(12).dropna(), label="Transformed")
+plot_acf(ts_lambda.diff(1).diff(12).dropna(),ax=ax[2], lags=60)
+plot_pacf(x=ts_lambda.diff(1).diff(12).dropna(), ax=ax[3], lags=60)
+for a in ax.flat:
+  a.legend()
+plt.tight_layout()
+plt.show()
+```
+
+
+```{python}
+forecast_steps = 12
+forecast = results.get_forecast(steps=forecast_steps)
+
+forecast_mean = forecast.predicted_mean
+forecast_ci = forecast.conf_int()
+
+forecast_mean_inverse = np.exp(forecast_mean)
+forecast_ci_inverse = np.exp(forecast_ci)
+
+fig, ax = plt.subplots(figsize=(15, 10))
+
+ax.plot(ts.index[400:], ts[400:], label="Original data")
+ax.plot(forecast_ci_inverse.index, forecast_ci_inverse, label="CI", color='green', linestyle='dashed')
+ax.plot(forecast_mean_inverse.index, forecast_mean_inverse, label="Prediction", color='red')
+ax.legend()
+
+plt.tight_layout()
+plt.show()
+```
+
+Covid exogenous variable
+```{python}
+intervention = pd.Series(0, index=ts.index)
+intervention["2020-03":"2020-12"] = 1
+p, d, q = 2, 1, 1
+P, D, Q, s = 2, 1, 1, 12 
+
+sarima_x = SARIMAX(
+  np.log(ts),
+  order=(p,d,q),
+  seasonal_order=(P, D, Q, s),
+  exog=intervention
+)
+
+results_x = sarima_x.fit()
+print(results_x.summary())
+```
+
+
+```{python}
+future_intervention = pd.Series(0, index=range(forecast_steps))
+
+forecast_x = results_x.get_forecast(
+  steps=forecast_steps,
+  exog=future_intervention
+)
+forecast_mean_x = np.exp(forecast_x.predicted_mean)
+forecast_ci_x = np.exp(forecast_x.conf_int())
+
+fig, ax = plt.subplots(figsize=(15, 10))
+
+ax.plot(ts.index[400:], ts[400:], label="Original data")
+ax.plot(forecast_ci_x.index, forecast_ci_x, label="CI", color='green', linestyle='dashed')
+ax.plot(forecast_mean_x.index, forecast_mean_x, label="Prediction", color='red')
+ax.legend()
+
+plt.tight_layout()
+plt.show()
+
+```
+
+#### Exponential smoothing
+
+Here I need to count for trend, level and seasonality --> Holt-Winters.
+```{python}
+from statsmodels.tsa.api import ExponentialSmoothing
+
+model = ExponentialSmoothing(
+  ts,
+  seasonal_periods=12, # monthly data
+  trend="add",
+  seasonal="mul"
+)
+
+fit = model.fit()
+
+forecast = fit.forecast(steps=12)
+
+fit.aic, fit.summary()
+```
+
+# ML and DL for Time Series
+
+## Theory
+
+## RNN
+
+*R*ecurrent *N*eural *N*etwork are useful with sequential data. It uses the concept of memory, meaning the previous information is used in the next steps. *Hidden state* makes possible the information sharing between layers.
+There is a problem: *vanishing gradient*, meaning the gradient tends to be smaller the longer the NN. This slows down the computation. LSTM and GRU help to solve this problem.
+*L*ong *S*hort *T*erm *M*emory, a type of RNN useful for time series.
+
+- **Cell state** preserve the memory.
+- **Gates**, input door (**input**, **forget** and **output**) to manage the information flow and let the model save and drop informations.
+
+*G*ated *R*ecurrent *U*nit, a simplified LSTM which binds forget and input in a single gate to improve computational performance.
+
+*C*onvulutional *N*eural *N*etwork can be used for time series analysis. Good for local dependencies, bad on the long term one. Useful in combination with previous one.
+
+## Prophet
+
+Addictive model for time series with a strong seasonal, holiday and trend shift.
+
+$y(t) = g(t) + s(t) + h(t) + \epsilon_t$
+
+- g(t) = trend.
+- s(t) = seasonality.
+- h(t) = holidays.
+- $\epsilon_t$ = residual noise.
+
+### Pro
+
+- outlier and missing values handling.
+- robust.
+- quick training.
+- automatically find seasonality.
+
+### Cons
+
+- Less flexibility.
+- Addictive model does not work well with multiplicative data, for example for variance.
+
+## Accuracy
+
+### Metrics 
+
+*M*ean *A*bsolute *E*rror: $MAE = \frac{1}{n} \sum_{i=1}^{n} |Y_i - \hat{Y_i}|$
+  
+- avg absolute error -> precision.
+- robust to outlier.
+
+*R*oot *MSE*: $RMSE = \sqrt{ \frac{1}{n} \sum_{i=1}^{n} (Y_i - \hat{Y_i})^2 }$
+
+  - better penality for big errors. 
+
+*M*ean *A*bsolute *P*ercentage *E*rror: $MAPE = \frac{100}{n} \sum_{i=1}^{n} \left| \frac{Y_i - \hat{Y_i}}{Y_i} \right|$
+
+  - Mean of the percentage errors.
+  - It does not depends on the data scale.
+
+### Plots
+
+Using plots, *forecast vs actuals*, *residual analysis*.
+
+### Model comparison
+
+- Benchmarking with naive models.
+- Cross validation.
+
+  - avoid data leakage and time dependencies.
+  - makes the model robust to new data.
+
+  - techniques:
+    
+    - Fixed or Rolling forecast origin, which fit on a moving window and test it on the next value.
+    - Time series split, keeps the order of the observations.
+
+## Practice
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import root_mean_squared_error
+
+import tensorflow as tf
+import keras
+from keras.models import Sequential
+from keras.layers import Input, Dense, LSTM, Conv1D, MaxPooling1D, Flatten
+
+from prophet import Prophet
+import logging
+
+logging.getLogger('cmdstanpy').setLevel(logging.ERROR)
+```
+
+
+```{python}
+data = sns.load_dataset('dowjones')
+data.columns = data.columns.str.lower()
+data = data.set_index('date')
+price = data.price
+
+plt.figure(figsize=(12, 10))
+plt.plot(price.index, price)
+plt.title("DowJones Price")
+plt.xlabel("Date")
+plt.ylabel("Price")
+plt.show()
+```
+
+
+```{python}
+ts = price.values.reshape(-1, 1)
+
+ss = MinMaxScaler()
+ts_ss = ss.fit_transform(ts)
+```
+
+NN require sequences.
+
+```{python}
+window_size = 12 # number of values
+
+def create_sequences(data, window):
+
+  x, y = [], []
+
+  for i in range(len(data)-window):
+    x.append(data[i:i+window])
+    y.append(data[i+window])
+
+  return np.array(x), np.array(y)
+
+x, y = create_sequences(ts_ss, window_size)
+x[0]
+y[0]
+```
+
+
+```{python}
+split = int(0.8 * len(x))
+split
+
+xtrain, xtest, ytrain, ytest = x[:split], x[split:], y[:split], y[split:]
+xtrain.shape, ytrain.shape
+```
+
+### CNN
+
+```{python}
+cnn = Sequential([
+  Input(shape=(window_size, 1)),
+  Conv1D(filters=64, kernel_size=3, activation="relu"),
+  MaxPooling1D(pool_size=2),
+  Flatten(),
+  Dense(50, activation="relu"),
+  Dense(1)
+])
+
+cnn.compile(optimizer="adam", loss="mse")
+cnn.fit(xtrain, ytrain, epochs=100, batch_size=16, verbose=0)
+```
+
+```{python}
+ypred_cnn = cnn.predict(xtest)
+ypred_cnn = ss.inverse_transform(ypred_cnn)
+ytest_rescaled = ss.inverse_transform(ytest)
+```
+
+### LSTM
+
+```{python}
+lstm = Sequential([
+  Input(shape=(window_size, 1)),
+  LSTM(32, activation="tanh"),
+  Dense(1)
+])
+
+lstm.compile(optimizer="adam", loss="mse")
+lstm.fit(xtrain, ytrain, epochs=100, batch_size=32, verbose=0)
+```
+
+```{python}
+ypred_lstm = lstm.predict(xtest)
+ypred_lstm = ss.inverse_transform(ypred_lstm)
+```
+
+```{python}
+plt.figure(figsize=(12, 10))
+plt.plot(ytest_rescaled, label="Original")
+plt.plot(ypred_cnn, label="CNN")
+plt.plot(ypred_lstm, label="LSTM")
+plt.legend()
+plt.show()
+```
+
+
+```{python}
+rmse_cnn = root_mean_squared_error(ytest_rescaled, ypred_cnn)
+rmse_lstm = root_mean_squared_error(ytest_rescaled, ypred_lstm)
+print(f"CNN: {rmse_cnn}")
+print(f"LSTM: {rmse_lstm}")
+```
+
+### Prophet
+
+```{python}
+flights = sns.load_dataset('flights')
+
+# Prophet needs data in a specific format
+
+flights['date'] = pd.to_datetime(flights.year.astype(str) + "-" + flights.month.astype(str) + "-" + "01")
+
+df = flights.rename(columns={
+  'date' : 'ds',
+  'passengers': 'y'
+})
+
+prophet = Prophet(
+  weekly_seasonality=True,
+  daily_seasonality=False,
+  yearly_seasonality=True,
+  seasonality_mode="multiplicative" # default addictive.
+)
+prophet.fit(df)
+```
+
+
+```{python}
+# create future perdiods to predict
+future = prophet.make_future_dataframe(
+  periods=24, # days
+  freq="MS" # month start
+)
+forecast = prophet.predict(future)
+```
+
+
+```{python}
+plt.figure(figsize=(12 , 10))
+plt.plot(df.ds, df.y, label="Original")
+plt.plot(forecast.ds, forecast.yhat, label="Forecast")
+plt.plot(forecast.ds, forecast.trend, label="Forecast")
+plt.legend()
+plt.show()
+```
+
+```{python}
+from statsmodels.stats.diagnostic import acorr_ljungbox
+import statsmodels.api as sm
+from sklearn.metrics import mean_absolute_error
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+from sklearn.metrics import mean_absolute_error, root_mean_squared_error, mean_absolute_percentage_error
+
+log_df = np.log(df.y)
+sarima = SARIMAX(log_df, order=(1,1,1), seasonal_order=(0,1,1,12))
+sarima_result = sarima.fit()
+
+sarima_residuals = sarima_result.resid
+
+plt.figure(figsize=(12, 10))
+plt.plot(log_df.index, sarima_residuals, linestyle="-")
+plt.axhline(0, color="red", linestyle="--")
+plt.title("Rsiduals over time")
+plt.xlabel("Date")
+plt.ylabel("Resid")
+plt.show()
+```
+
+Very high error at the beginning, but it is understable: the model had few data. So we can focus on the next values.
+
+```{python}
+plt.figure(figsize=(12, 10))
+plt.plot(log_df.index[20:], sarima_residuals[20:], linestyle="-")
+plt.axhline(0, color="red", linestyle="--")
+plt.title("Rsiduals over time")
+plt.xlabel("Date")
+plt.ylabel("Resid")
+plt.show()
+```
+
+The error presents homoschedasticity.
+
+```{python}
+plt.figure(figsize=(12, 10))
+plt.hist(sarima_residuals[20:], bins=20, edgecolor='k', alpha=0.7)
+plt.title("Residuals histogram")
+plt.show()
+```
+
+Lets make a correlation test on the residuals.
+
+
+```{python}
+lb_test = acorr_ljungbox(residuals, lags=[12], return_df=True)
+print(f"Ljung Box Test (12 lags:\n{lb_test}")
+```
+
+
+Cross validation for prophet model.
+
+
+```{python}
+n_splits = 10
+initial = 60
+horizon = 6 # days
+
+mae_list = []
+rmse_list = []
+mape_list = []
+
+for i in range(n_splits):
+    train_end = initial + i
+    train = df.iloc[:train_end]
+    test = df.iloc[train_end: train_end + horizon]
+    prophet = Prophet(
+        weekly_seasonality=True,
+        daily_seasonality=False,
+        yearly_seasonality=True,
+        seasonality_mode="multiplicative"
+    )
+    prophet.fit(train)
+
+    future = prophet.make_future_dataframe(periods=horizon, freq="MS")
+    forecast = prophet.predict(future)
+    ypred = forecast.set_index('ds').loc[test.ds, "yhat"].values
+    ytrue = test.y.values
+    mae = mean_absolute_error(ytrue, ypred)
+    rmse = root_mean_squared_error(ytrue, ypred)
+    mape = np.mean(np.abs((ytrue - ypred) / ytrue)) * 100
+    mae_list.append(mae)      # ← must be inside the loop
+    rmse_list.append(rmse)     # ← must be inside the loop
+    mape_list.append(mape)     # ← must be inside the loop
+    print(f"Fold {i+1} - MAE {mae:.2f} RMSE {rmse:.2f} MAPE {mape:.2f}")
+```
+
+```{python}
+print(f"avg mae: {np.round(sum(mae_list)/len(mae_list), 2)}")
+print(f"avg mape: {np.round(sum(mape_list)/len(mape_list), 2)}")
+print(f"avg rmse: {np.round(sum(rmse_list)/len(rmse_list), 2)}")
+```
+
+## Exercise

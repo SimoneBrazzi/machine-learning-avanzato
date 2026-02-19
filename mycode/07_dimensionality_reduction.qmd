@@ -1,0 +1,614 @@
+---
+author: 'Dimensionality reduction'
+theme:
+  dark: darkly
+  light: flatly
+---
+
+# Theory 
+
+*Curse of dimensionality*: slow model, harder optimization.
+- sample distribution on the borders of the sample space (r, p).
+- distance within samples is almost uniform.
+- sparse data, harder clustering or classification.
+- higher overfitting risk.
+
+- data sparsness -> no pattern.
+- overffiting.
+- noise.
+
+Dimensionality reduction allows:
+- quicker training.
+- model generalization.
+- data viz. [!NOTE] Information loss ahead! It is about balance.
+
+## Types
+
+### Projection | Factorial Methods
+
+From 3D to 2D -> *Principal Component Analysis*
+*Factorial methods* -> Statistical method to simplify the dataset.
+
+#### Principal Component Analysis
+- quantitative continuous variables.
+- dimensionality reduction preserving maximum variance.
+- principal components = non correlated new variables.
+- linear data.
+
+From p components to h, where h < p.
+- less noise.
+- minimum information/variance loss.
+
+*first component* -> linear combination of the p variables with max variance.
+*second component* -> linear combination of the p variables with second most max variance and *ortogonal* to the previous component.
+
+*var-cov matrix* -> symmetrical matrix. The *trace* (= sum of the variance diagonal) is the *variability* of the system, which has to be preserved.
+- *eigenvalues* -> synthetize the variability of the matrix.
+- *eigenvectors* -> principal directions of data.
+
+
+
+
+![](img/principal%20components.png)
+
+Vector normalization lets have points projections which depends on the direction and not the length of the vectors.
+
+$$
+v = \begin{patrix}
+1 \\
+0 \\
+1
+\end{pmatrix}
+
+\|v\|ˆ2 = 1ˆ2 + 0ˆ2 + 1ˆ2 = 2
+
+v = \begin{patrix}
+\frac{1}{\sqrt{2}} \\
+0 \\
+\frac{1}{\sqrt{2}}
+\end{pmatrix}
+$$
+
+Point projection -> scalar product with the normalized vector.
+
+$$
+P_i = \begin{bmatrix} 3 & 2 & 5 \end{bmatrix}
+
+O\tilde{P_i} = \begin{bmatrix} 3 & 2 & 5 \end{bmatrix} \times 
+v = \begin{patrix}
+\frac{1}{\sqrt{2}} \\
+0 \\
+\frac{1}{\sqrt{2}}
+\end{pmatrix}
+ 
+
+\frac{3}{sqrt{2}} + 0 + \frac{5}{sqrt{2}} = 5,65
+$$
+
+PCA *minimized* the difference between P and the projection <=> *maximize* the distance between the origin and the projection.
+
+The greater the distance, the greater the variance.
+
+PCA requires *centralization*, so a centered space -> for each variable, subtract the variable mean. It is a Origin traslation with all the points.
+
+3 methods to selects the optimal amount of PC:
+
+1. Variance percentage.
+2. Eigenvalues.
+3. Screen test/plot. Take just the variables before the curve flattening.
+
+
+##### Image compression with PCA
+Image recomposition using the first k component. See jpeg compressoin, denoise or pre-elaboration for ML.
+
+##### Randomized PCA
+As always, with big dataset to increase computation time.
+Multiplication between the original matrix with a randomized projection matrix to reduce the dimensionality and calculate eigenvalues and eigenvectors. It is an approximation.
+
+##### Incremental PCA
+
+- Useful with big datasets by rows.
+- Cov matrix by batch.
+- Slower, but it is working straming data.
+
+##### Kernel PCA
+- Using *kernel function* instead of the cov matrix. PCA is applied to this matrix.
+- Types of kernel: RBF or gaussian, polynomial, sigmoid.
+- Higher computational cost, but enables non linear spaces.
+
+#### Corrispondence Analysis
+- qualitative variables.
+- Binary CA -> contigency tables.
+- Multiplle CA.
+
+### Manifold Learning
+
+- Manifold (variety) distribution on an higher complexity plane, but an easier one on a lower one.
+  for example, data on a 2D plane have an easy distribuiton, which is complex on a 3D one.
+- isomap, t-SNE or LLE method help preserve the structure.
+- Non linear data.
+
+## PCA to compress images
+- k components to get a lower resolution image, but with most important informations.
+- the more the componentes, the higher the image corrispondence.
+- feature extraction technique with a change from pixel to feature like.
+
+# Practice
+
+## Simple example
+
+```{python}
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_iris
+from sklearn.decomposition import PCA
+
+sns.set(style="whitegrid")
+
+iris = load_iris()
+x = pd.DataFrame(iris.data, columns=iris.feature_names)
+
+y = pd.Series(iris.target, name="species")
+
+plt.figure(figsize=(10, 6))
+sns.pairplot(pd.concat([x, y], axis=1), hue='species', palette='viridis')
+plt.suptitle("Real variable distribution", y=1.02)
+plt.show()
+```
+
+```{python}
+pca = PCA(n_components=2)
+x_pca = pca.fit_transform(x)
+x_pca_df = pd.DataFrame(x_pca, columns=["pc1", "pc2"])
+x_pca_df['species'] = y
+x_pca_df.head()
+```
+
+```{python}
+plt.figure(figsize=(10, 6))
+sns.scatterplot(x_pca_df, x="pc1", y="pc2", hue="species", palette="viridis")
+plt.title("PCA variable distribution")
+plt.xlabel("pc1")
+plt.ylabel("pc2")
+plt.show()
+```
+
+Class separation is similar to the one of the not PCA-ed variables.
+
+## Manifold tSNE
+
+```{python}
+import pandas as pd 
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.datasets import load_digits
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
+sns.set(style="whitegrid")
+
+digits = load_digits()
+x, y = digits.data, digits.target
+
+fig, axes = plt.subplots(4, 4, figsize=(8,8))
+for i, ax in enumerate(axes.flat):
+  ax.imshow(digits.images[i], cmap="binary")
+
+plt.show()
+```
+Images are a particular tabular data: both rows and columns are numbers, so they are matrixes where each element represents a pixel status.
+
+
+```{python}
+pca = PCA(n_components=2)
+x_pca = pca.fit_transform(x)
+plt.figure(figsize=(10,6))
+sns.scatterplot(x=x_pca[:, 0], y=x_pca[:, 1], hue=y, palette="tab10", legend=None)
+plt.title("PCA")
+plt.xlabel("pc1")
+plt.ylabel("pc2")
+plt.show()
+```
+
+Manifold tSNE introduce a non linear method
+
+```{python}
+tsne = TSNE(n_components=2, random_state=42)
+x_tsne = tsne.fit_transform(x)
+plt.figure(figsize=(10,6))
+sns.scatterplot(x=x_tsne[:, 0], y=x_tsne[:, 1], hue=y, palette="tab10", legend=None)
+plt.title("tSNE")
+plt.xlabel("pc1")
+plt.ylabel("pc2")
+plt.show()
+```
+It is computationally more intensive, BUT the result is way better for non linear data.
+
+## Image compresison
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_digits
+from sklearn.decomposition import PCA
+
+digits = load_digits()
+x, y = digits.data, digits.target
+
+
+plt.figure(figsize=(4, 4))
+plt.imshow(digits.images[0], cmap="grey")
+plt.show()
+```
+
+
+```{python}
+img = digits.images[0]
+n_components=2
+pca = PCA(n_components=n_components)
+img_transformed = pca.fit_transform(img)
+img_retransformed = pca.inverse_transform(img_transformed)
+
+plt.figure(figsize=(8, 4))
+plt.subplot(1,2,1)
+plt.imshow(img, cmap="grey")
+plt.title("original")
+
+plt.subplot(1,2,2)
+plt.imshow(img_retransformed, cmap="grey")
+plt.title(f"pca({n_components})")
+plt.show()
+```
+
+How much variance each component explain/preserve?
+
+```{python}
+np.cumsum(pca.explained_variance_ratio_)
+```
+
+```{python}
+n_rows, n_cols = img.shape
+
+size_original = n_rows * n_cols
+size_compressed = n_rows * n_components + n_cols * n_components
+size_ratio = size_original / size_compressed
+
+print(f"Original dimension: {size_original}")
+print(f"Compressed dimension: {size_compressed}")
+print(f"Ratio: {size_ratio}")
+```
+
+## Analysis with PCA
+
+### PCA from scratch
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.datasets import load_diabetes
+from sklearn.decomposition import PCA
+
+sns.set(style="whitegrid")
+
+diabetes = load_diabetes()
+x, y = diabetes.data, diabetes.target
+
+df = load_diabetes(as_frame=True).frame
+df.head()
+```
+
+```{python}
+x1 = "s5"
+x2 = "s6"
+
+plt.figure(figsize=(7, 5))
+sns.scatterplot(data=df, x=x1, y=x2)
+plt.title("Features distribution")
+plt.show()
+```
+
+```{python}
+cov_mat = np.cov(df[x1], df[x2])
+print(f"Var-Cov Matrix: \n{cov_mat}")
+
+eigenvalues, eigenvectors = np.linalg.eig(cov_mat)
+print(f"Eigenvalues: \n{eigenvalues}")
+print(f"Eigenvectors: \n{eigenvectors}")
+
+tot_var = np.sum(eigenvalues)
+print(f"Total Var: {tot_var}")
+explained_var_perc = (eigenvalues/tot_var) * 100
+print(f"Percentage Explained Var: {explained_var_perc}")
+
+
+origin = np.mean(df[[x1, x2]], axis=0)
+vec1 = eigenvectors[:, 0] * np.sqrt(eigenvalues[0]) * 2
+vec2 = eigenvectors[:, 1] * np.sqrt(eigenvalues[1]) * 2
+
+
+plt.figure(figsize(8, 6))
+sns.scatterplot(x=df[x1], y=df[x2], alpha=0.6)
+plt.quiver(*origin, *vec1, scale=1, angles='xy', scale_units='xy', color='r', label='pc1')
+plt.quiver(*origin, *vec2, scale=1, angles='xy', scale_units='xy', color='g', label='pc2')
+plt.title('Principal Components')
+plt.legend()
+plt.axis('equal')
+plt.show()
+```
+
+
+```{python}
+pca = PCA()
+x_pca = pca.fit_transform(df.drop("target", axis=1)) # n components = n variables
+x_pca
+```
+
+```{python}
+explained_var = pca.explained_variance_ratio_
+cum_var = np.cumsum(explained_var)
+```
+
+```{python}
+plt.figure(figsize=(10, 7))
+plt.plot(range(1, len(cum_var)+1), cum_var, marker='o')
+plt.axhline(0.75, color='g', linestyle="--", label="0.75 explained var")
+plt.title("Explained cumulative var")
+plt.xlabel("n components")
+plt.ylabel("Cumulative var")
+plt.legend()
+plt.show()
+```
+
+## Randomized PCA
+
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import time
+from sklearn.datasets import make_classification
+from sklearn.decomposition import PCA, IncrementalPCA
+
+x, y = make_classification(
+  n_samples=500,
+  n_features=1000,
+  n_informative=500,
+  random_state=42
+)
+x.shape
+```
+
+```{python}
+tic_full = time.time()
+pca_full = PCA(n_components=2, svd_solver="full")
+x_pca_full = pca_full.fit_transform(x)
+toc_full = time.time()
+
+tic_rand = time.time()
+pca_rand = PCA(n_components=2, svd_solver='randomized', random_state=42)
+x_pca_rand = pca_rand.fit_transform(x)
+toc_rand = time.time()
+
+print(f"PCA elapsed time: {toc_full - tic_full}.")
+print(f"PCA randomized elapsed time: {toc_rand - tic_rand}.")
+
+print(f"First components similarity: {np.corrcoef(x_pca_full[:, 0], x_pca_rand[:, 0])[0, 1]}")
+print(f"Seconds components similarity: {np.corrcoef(x_pca_full[:, 1], x_pca_rand[:, 1])[0, 1]}")
+```
+
+## Kernel PCA
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_moons
+from sklearn.decomposition import PCA, KernelPCA
+
+x, y = make_moons(n_samples=300, noise=0.05, random_state=42)
+x.shape
+
+plt.figure(figsize=(10, 7))
+plt.scatter(x[:, 0], x[:, 1], c=y, cmap="Spectral", edgecolors="k")
+plt.title("Initial space - Non linear clusterable data")
+plt.xlabel("feature 1")
+plt.ylabel("feature 2")
+plt.grid(True)
+plt.show()
+```
+
+```{python}
+pca = PCA(n_components=2)
+x_pca = pca.fit_transform(x)
+
+pca_k = KernelPCA(n_components=2, kernel='rbf', gamma=15)
+x_pcak = pca_k.fit_transform(x)
+
+data = [x_pca, x_pcak]
+titles = ['PCA', 'KernelPCA']
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 7))
+
+for ax, x, title in zip(axes, data, titles):
+  ax.scatter(x[:, 0], x[:, 1], c=y, cmap="Spectral", edgecolors="k", s=20)
+  ax.set_title(title)
+  ax.set_xlabel("pc1")
+  ax.set_ylabel("pc2")
+  ax.grid(True)
+
+plt.show()
+```
+
+```{python}
+gammas = [.1, 5, 15, 50]
+
+fig, axes = plt.subplots(1, len(gammas), figsize=(15, 12))
+
+for ax, gamma in zip(axes, gammas):
+  kpca = KernelPCA(n_components=2, kernel='rbf', gamma=gamma)
+  x_kpca = kpca.fit_transform(x)
+  ax.scatter(x_kpca[:, 0], x_kpca[:, 1], c=y, cmap="Spectral", edgecolors="k", s=20)
+  ax.set_title(f"KernelPCA with gamma {gamma}")
+  ax.grid(True)
+
+plt.show()
+```
+
+# Exercise
+
+## Swiss roll dataset
+
+Dimensionality reduction with swiss roll using `make_swiss_roll()`.
+
+```{python}
+import pandas as pd
+import numpy as np
+from sklearn.datasets import make_swiss_roll
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
+x, y, = make_swiss_roll(n_samples=1500, noise=0.05, random_state=42)
+```
+
+### 3 dimensions representation
+
+```{python}
+x.shape
+x[:5]
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+fig, ax = plt.subplots(subplot_kw={"projection" : "3d"}, figsize=(15, 10))
+ax.scatter(xs=x[:, 0], ys=x[:, 1], zs=x[:, 2], c=y)
+plt.show()
+```
+
+### 2 components PCA
+
+```{python}
+pca = PCA(n_components=2)
+x_pca = pca.fit_transform(x)
+x_pca
+fig, ax = plt.subplots(figsize=(10, 7))
+ax.scatter(x=x_pca[:, 0], y=x_pca[:, 1], c=y)
+plt.show()
+```
+
+### tSNE
+
+```{python}
+tsne = TSNE(n_components=2, random_state=42)
+x_tsne = tsne.fit_transform(x)
+
+fig, ax = plt.subplots(figsize=(10, 7))
+ax.scatter(x=x_tsne[:, 0], y=x_tsne[:, 1], c=y)
+plt.show()
+```
+
+## Wine dataset
+
+- EDA.
+- PCA.
+- Plot first 2 components.
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.datasets import load_wine
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA, KernelPCA
+from sklearn.manifold import TSNE
+
+wine = load_wine()
+wine_df = load_wine(as_frame=True).frame
+x, y = wine.data, wine.target
+x.shape, y.shape
+
+wine_df.head()
+```
+
+```{python}
+features = pd.DataFrame(data=x, columns=wine_df.columns[:-1])
+features.describe()
+features.info()
+
+```
+
+```{python}
+sns.pairplot(
+  data=wine_df[list(wine_df.columns[:5]) + ['target']],
+  hue='target'
+)
+plt.show()
+```
+
+```{python}
+fig, axs = plt.subplots(3, len(features.columns) // 3
+, figsize=(15, 12))
+
+for ax, col in zip(axs.flat, features.columns):
+  sns.boxplot(features[col], ax=ax)
+  ax.set_title(col.title())
+
+plt.show()
+```
+
+```{python}
+ss = StandardScaler()
+pca = PCA()
+kpca = KernelPCA(n_components=2, kernel='rbf', gamma=5)
+tsne = TSNE(n_components=2)
+
+x_ss = ss.fit_transform(x)
+
+x_pca = pca.fit_transform(x_ss)
+x_kpca = kpca.fit_transform(x_ss)
+x_tsne = tsne.fit_transform(x_ss)
+```
+
+```{python}
+fig, axs = plt.subplots(1, 3, figsize=(15, 10))
+
+for ax, x, title in zip(axs.flat, [x_pca, x_kpca, x_tsne], ["pca", "kpca", 'tsne']):
+  sns.scatterplot(x=x[:, 0], y=x[:, 1], ax=ax, hue=y, palette="Set1")
+  ax.set_title(title)
+
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+ss = StandardScaler()
+x_ss = ss.fit_transform(features)
+pca = PCA()
+x_pca = pca.fit_transform(x_ss)
+
+explained_var = pca.explained_variance_ratio_
+cumulative_vars = np.cumsum(explained_var)
+cumulative_vars
+n_components = np.argmax(cumulative_vars >= 0.8) + 1
+n_components
+```
+
+```{python}
+ss = StandardScaler()
+x_ss = ss.fit_transform(features)
+pca = PCA(n_components=.8)
+x_pca = pca.fit_transform(x_ss)
+
+pca.n_components_
+pca.explained_variance_ratio_
+np.cumsum(pca.explained_variance_ratio_)
+```

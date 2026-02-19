@@ -1,0 +1,227 @@
+---
+author: "Simone Brazzi"
+title: "AutoML"
+theme:
+  dark: darkly
+  light: flatly
+---
+
+# Theory
+
+Automated data science techniques. It simplifies ML reducing the pipeline.
+
+`Auto Scikit Learn` -> *bayesian optimisation*.
+  - best pipeline based on a scorer for each combination of hyperparameter, preprocessor and estimator.
+
+`Tree Based Pipeline Optimization Tool` -> *genetic tree research*.
+  - random set of pipelines evaluated by a scorer, then combination of each of them.
+  - very computationally intensive.
+
+# Practice
+
+```{python}
+from sklearn.datasets import load_wine
+from sklearn.metrics import mean_absolute_percentage_error, r2_score
+from sklearn.model_selection import train_test_split
+from tpot import TPOTRegressor
+```
+
+```{python}
+wine = load_wine()
+x, y = wine.data, wine.target
+xtrain, xtest, ytrain, ytest = train_test_split(x, y, test_size=.2, random_state=42)
+```
+
+```{python}
+model = TPOTRegressor(
+  # 5 loop with 10 pipelines for each loop + 5 K fold for cv
+  generations=5,
+  population_size=10,
+  cv=5,
+  random_state=42,
+  verbose=0
+)
+model.fit(xtrain, ytrain)
+```
+
+```{python}
+ytrain_pred = model.predict(xtrain)
+ypred = model.predict(xtest)
+
+mape_train = mean_absolute_percentage_error(ytrain, ytrain_pred)
+mape_test = mean_absolute_percentage_error(ytest, ypred)
+r2_train = r2_score(ytrain, ytrain_pred)
+r2_test = r2_score(ytest, ypred)
+
+print(f"TRAIN MAPE: {mape_train * 100 :.2f} vs TEST MAPE: {mape_test * 100 :.2f}")
+print(f"TRAIN R2: {r2_train} vs TEST R2: {r2_test}")
+```
+# Exercise 
+
+```{python}
+from ucimlrepo import fetch_ucirepo, list_available_datasets
+import pandas as pd
+import numpy as np 
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, GridSearchCV
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, roc_auc_score
+
+```
+
+```{python}
+# list_available_datasets()
+heart_disease = fetch_ucirepo(id=45)
+print(heart_disease.metadata.additional_info.summary)
+print(heart_disease.metadata.abstract)
+print(heart_disease.metadata.additional_info.variable_info)
+
+x, y = heart_disease.data.features, heart_disease.data.targets
+y = y.values.ravel()
+
+x.head()
+x.info()
+
+x.ca.isna().sum()
+x.ca.describe()
+x.ca.value_counts()
+
+x.thal.isna().sum()
+x.thal.describe()
+x.thal.value_counts()
+
+x[x.thal.isna()]
+```
+
+- *ca* -> number of major vessels (0-3) colored by fluorosopy. impute mode.
+- *thal* -> heart disease status. impute mode.
+
+```{python}
+xtrain, xtest, ytrain, ytest = train_test_split(x, y, test_size=.2, random_state=42)
+
+preprocessor = Pipeline(steps=[
+  (
+    'imputer',
+    ColumnTransformer(
+      transformers=[('impute_cols', SimpleImputer(strategy='most_frequent'), ['ca', 'thal'])],
+      remainder='passthrough'
+    )
+  ),
+  ('scaler', MinMaxScaler())
+])
+
+pipe = Pipeline(steps=[
+  ('preprocessing', preprocessor),
+  ('model', RandomForestClassifier())
+])
+
+param_distribution = {
+    'model__n_estimators': [100, 200, 300, 500],
+    'model__max_depth': [5, 10, 15, 20, None],
+    'model__min_samples_split': [2, 5, 10],
+    'model__min_samples_leaf': [1, 2, 4],
+    'model__max_features': ['sqrt', 'log2', None],
+}
+
+search_space = RandomizedSearchCV(
+  estimator=pipe,
+  param_distributions=param_distribution,
+  n_iter=10,
+  scoring='roc_auc',
+  cv=5,
+  n_jobs=-1,
+  verbose=1
+)
+
+search_space.fit(xtrain, ytrain)
+ypred = search_space.predict(xtest)
+
+print(f"accuracy: {accuracy_score(ytest, ypred)}")
+```
+
+
+```{python}
+from ucimlrepo import fetch_ucirepo, list_available_datasets
+import pandas as pd
+import numpy as np 
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, GridSearchCV
+from skopt import BayesSearchCV
+from skopt.space import Integer, Categorical
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, roc_auc_score
+
+heart_disease = fetch_ucirepo(id=45)
+x, y = heart_disease.data.features, heart_disease.data.targets
+x.head(), y.head()
+
+y.value_counts()
+
+xtrain, xtest, ytrain, ytest = train_test_split(x, y, test_size=.2, random_state=42, stratify=y)
+xtrain.shape, ytrain.shape
+
+ytrain, ytest = ytrain.values.ravel(), ytest.values.ravel()
+ytrain.shape, ytest.shape
+
+preprocessor = Pipeline(steps=[
+  ('imputer', SimpleImputer(strategy='most_frequent')),
+  ('scaler', MinMaxScaler()),
+])
+rfc = RandomForestClassifier()
+
+pipe_rfc = Pipeline(steps=[
+  ('preprocessor', preprocessor),
+  ('classifier', rfc)
+])
+
+search_space = {
+  "classifier__n_estimators" : Integer(50, 500),
+  "classifier__criterion" : Categorical(['gini', 'entropy', 'log_loss']),
+  "classifier__max_depth" : Integer(3, 30)
+}
+
+bayesian_search = BayesSearchCV(
+  estimator=pipe_rfc,
+  search_spaces=search_space,
+  scoring='accuracy',
+  n_iter=50,
+  n_jobs=-1,
+  verbose=1,
+  cv=5,
+  random_state=42
+)
+
+bayesian_search.fit(xtrain, ytrain)
+
+ypred_train = bayesian_search.predict(xtrain)
+ypred = bayesian_search.predict(xtest)
+
+
+print(f"ACCURACY SCORE TRAIN: {accuracy_score(ytrain, ypred_train)}")
+print(f"ACCURACY SCORE TEST: {accuracy_score(ytest, ypred)}")
+```
+
+
+```{python}
+from tpot import TPOTClassifier
+
+pipe_tpot = TPOTClassifier(
+  generations=5,
+  population_size=10,
+  cv=5,
+  random_state=42
+)
+pipe_tpot.fit(xtrain, ytrain)
+
+ypred_train = pipe_tpot.predict(xtrain)
+ypred = pipe_tpot.predict(xtest)
+
+print(f"ACCURACY SCORE TRAIN: {accuracy_score(ytrain, ypred_train)}")
+print(f"ACCURACY SCORE TEST: {accuracy_score(ytest, ypred)}")
+```

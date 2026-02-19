@@ -1,0 +1,1552 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "author: \"Simone Brazzi\"\n",
+        "title: \"Time Series\"\n",
+        "date: 2026-02-03\n",
+        "theme:\n",
+        "  dark: darkly\n",
+        "  light: lightly\n",
+        "execute:\n",
+        "  eval: true\n",
+        "---\n",
+        "\n",
+        "# Theory\n",
+        "\n",
+        "## Introduction -  Practice"
+      ],
+      "id": "35e4ac19"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import seaborn as sns\n",
+        "import matplotlib.pyplot as plt\n",
+        "\n",
+        "from statsmodels.tsa.seasonal import seasonal_decompose\n",
+        "\n",
+        "import kagglehub\n",
+        "path = kagglehub.dataset_download(\"arpitagupta11/superstore-csv\")\n",
+        "path+\"/superstore.csv\""
+      ],
+      "id": "2b25e741",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "df = pd.read_csv(path+\"/superstore.csv\", encoding='latin1', index_col=\"Order Date\", parse_dates=True)\n",
+        "df.head()\n",
+        "\n",
+        "df = df[df['Category']=='Furniture'][['Sales', 'Profit']]\n",
+        "df.head()"
+      ],
+      "id": "718a0b81",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "df.dtypes\n",
+        "df.describe()\n",
+        "df.index"
+      ],
+      "id": "ddda9df3",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "dfg = df.groupby('Order Date').agg({\"Sales\":\"sum\", \"Profit\":\"sum\"})\n",
+        "dfg.index\n",
+        "\n",
+        "dfg.sort_index()\n",
+        "\n",
+        "\n",
+        "dfg = dfg.resample('MS').sum() # month start\n",
+        "dfg.head()"
+      ],
+      "id": "f7ae37bb",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(figsize=(12, 7))\n",
+        "ax.plot(dfg.index, dfg.Sales, marker=\"o\", linestyle=\"-\", color=\"g\", label=\"Sales\")\n",
+        "ax.plot(dfg.index, dfg.Profit, marker=\"o\", linestyle=\"-\", color=\"b\", label=\"Profit\")\n",
+        "ax.set_title(\"Sales and Profit Time Series\")\n",
+        "ax.set_xlabel(\"Date\")\n",
+        "ax.legend()\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "48ceed1b",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "flights = sns.load_dataset('flights')\n",
+        "flights\n",
+        "\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(12, 7))\n",
+        "ax.plot(flights.index, flights.passengers, color='b', label='passengers')\n",
+        "ax.set_ylabel(\"Passengers\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()\n",
+        "\n",
+        "result = seasonal_decompose(flights.passengers, model='multiplicative', period=12)\n",
+        "fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(12, 15))\n",
+        "\n",
+        "for ax, r, c, l in zip(\n",
+        "  axs.flat,\n",
+        "  [result.observed, result.trend, result.seasonal, result.resid],\n",
+        "  ['b', 'g', 'r', 'black'],\n",
+        "  ['Observed', 'Trend', 'Seasonal', 'Residuals']\n",
+        "):\n",
+        "\n",
+        "  ax.plot(flights.index, r, color=c, label=l)\n",
+        "  ax.set_ylabel(l)\n",
+        "  ax.legend()\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "c575098f",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Preprocessing\n",
+        "\n",
+        "### Missing values\n",
+        "- mean\n",
+        "- median\n",
+        "- linear interpolation -> forward or backward fill\n",
+        "- polynomial interpolation\n",
+        "- seasonal decomposition\n",
+        "\n",
+        "### Outlier\n",
+        "- statistical method -> z-score or IQR.\n",
+        "- ml method -> isolation forest, DBSCAN.\n",
+        "\n",
+        "imputation or drop.\n"
+      ],
+      "id": "0c156735"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "from scipy.stats import zscore\n",
+        "\n",
+        "df = pd.read_csv(path+\"/superstore.csv\", encoding='latin1', index_col=\"Order Date\", parse_dates=True)\n",
+        "df = df[df['Category']=='Furniture']['Profit']\n",
+        "dfg = df.groupby('Order Date').sum().reset_index()\n",
+        "dfg = dfg.sort_index()\n",
+        "dfg.head()"
+      ],
+      "id": "d876da34",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "serie = dfg['Profit'][1:500]\n",
+        "serie\n",
+        "fig, ax = plt.subplots(figsize=(12, 7))\n",
+        "ax.plot(serie.index, serie)\n",
+        "ax.set_title(\"Profit Time Series\")\n",
+        "ax.set_xlabel(\"Date\")\n",
+        "ax.set_ylabel(\"Profit\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "6aee6094",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Missing values"
+      ],
+      "id": "5de46317"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "serie.iloc[20:30] = np.nan\n",
+        "fig, ax = plt.subplots(figsize=(12, 7))\n",
+        "ax.plot(serie.index, serie)\n",
+        "ax.set_title(\"Profit Time Series with NAN\")\n",
+        "ax.set_xlabel(\"Date\")\n",
+        "ax.set_ylabel(\"Profit\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "16369822",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "serie = dfg['Profit'][1:500]\n",
+        "serie.iloc[20:30] = np.nan\n",
+        "filled = serie.ffill()\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(12, 7))\n",
+        "ax.plot(filled.index[:100], filled[:100], color='r', label='Filled')\n",
+        "ax.plot(serie.index[:100], serie[:100], color='b', label='Missing values')\n",
+        "ax.set_title(\"Profit Time Series with NAN forward filled\")\n",
+        "ax.set_xlabel(\"Date\")\n",
+        "ax.set_ylabel(\"Profit\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "e1e661b9",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "serie = dfg['Profit'][1:500]\n",
+        "serie.iloc[20:30] = np.nan\n",
+        "filled = serie.fillna(np.mean(serie))\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(12, 7))\n",
+        "ax.plot(filled.index[:100], filled[:100], color='r', label='Filled')\n",
+        "ax.plot(serie.index[:100], serie[:100], color='b', label='Missing values')\n",
+        "ax.set_title(\"Profit Time Series with NAN filled with mean\")\n",
+        "ax.set_xlabel(\"Date\")\n",
+        "ax.set_ylabel(\"Profit\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "4c139b59",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Outlier"
+      ],
+      "id": "f73720ed"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "z = np.abs(zscore(filled))\n",
+        "outliers = (z > 3)\n",
+        "\n",
+        "cleaned = filled.copy()\n",
+        "cleaned[outliers] = cleaned.rolling(window=5).mean()[outliers].astype('float32')\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(12, 7))\n",
+        "ax.plot(filled.index, filled, color='red', label='Original')\n",
+        "ax.plot(cleaned.index, cleaned, color='blue', label='Outlier removed')\n",
+        "ax.legend()\n",
+        "plt.show()"
+      ],
+      "id": "0d646892",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Interpolation"
+      ],
+      "id": "4bf7609b"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "serie = dfg['Profit'][1:500]\n",
+        "serie.iloc[20:30] = np.nan\n",
+        "filled = serie.interpolate(method='linear')\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(12, 7))\n",
+        "ax.plot(filled.index[:100], filled[:100], color='r', label='Filled')\n",
+        "ax.plot(serie.index[:100], serie[:100], color='b', label='Missing values')\n",
+        "ax.set_title(\"Profit Time Series with NAN filled with mean\")\n",
+        "ax.set_xlabel(\"Date\")\n",
+        "ax.set_ylabel(\"Profit\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "0a047a08",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Exercise\n"
+      ],
+      "id": "54a06924"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "\n",
+        "dj = sns.load_dataset('dowjones')\n",
+        "dj.head()\n",
+        "\n",
+        "dj[\"Date\"] = pd.to_datetime(dj.Date)\n",
+        "\n",
+        "dj.Price.plot(title=\"Dow Jones\", figsize=(10, 7))\n",
+        "# plt.show()"
+      ],
+      "id": "0fcdff4b",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "# add missing values\n",
+        "np.random.seed(42)\n",
+        "missing_idx = np.random.choice(dj.index, size=20, replace=False)\n",
+        "dj.loc[missing_idx, 'Price'] = np.nan\n",
+        "plt.figure(figsize=(12, 6))\n",
+        "plt.plot(dj.Date, dj.Price, linewidth=2)\n",
+        "plt.show()\n",
+        "\n",
+        "# add outliers\n",
+        "outlier_idx = np.random.choice(dj.index, size=5, replace=False)\n",
+        "dj.loc[outlier_idx, 'Price'] = dj.loc[outlier_idx, 'Price'] * 5\n",
+        "plt.figure(figsize=(12, 6))\n",
+        "plt.plot(dj.Date, dj.Price, linewidth=2)\n",
+        "plt.show()"
+      ],
+      "id": "fae97906",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "dj.isna().sum()\n",
+        "dj.info()\n",
+        "dj.describe()\n",
+        "\n",
+        "plt.plot(dj.Date, dj.Price)\n",
+        "plt.show()"
+      ],
+      "id": "e374c363",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "sns.boxplot(dj.Price)\n",
+        "plt.show()"
+      ],
+      "id": "6f36e148",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "from scipy.stats import zscore\n",
+        "\n",
+        "dj['price'] = dj.Price.interpolate(method='linear')\n",
+        "\n",
+        "dj['rolling_mean'] = dj.price.rolling(12).mean().bfill()\n",
+        "dj['rolling_median'] = dj.price.rolling(12).median().bfill()\n",
+        "dj.head()"
+      ],
+      "id": "21a74dc0",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "dj['residuals'] = dj.price - dj.rolling_mean # residuals = real - mean\n",
+        "dj['zscore'] = zscore(dj.residuals.dropna())\n",
+        "dj.head()\n",
+        "\n",
+        "dj.zscore.describe()\n",
+        "\n",
+        "outliers = dj[np.abs(dj.zscore) > 3]\n",
+        "dj['price_clean'] = dj.price\n",
+        "dj.loc[outliers.index, 'price_clean'] = dj.loc[outliers.index, 'rolling_median']"
+      ],
+      "id": "46a4208c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(figsize=(15, 12))\n",
+        "ax.plot(dj.Date, dj.price_clean)\n",
+        "plt.show()"
+      ],
+      "id": "ce2f547f",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "df = dj[['Date', 'price_clean']].rename(columns={'Date' : 'date', 'price_clean' : 'price'})\n",
+        "df.head()\n",
+        "df = df.set_index('date')\n",
+        "\n",
+        "\n",
+        "df['rolling_12'] = df.price.rolling(12).mean()\n",
+        "df['rolling_24'] = df.price.rolling(24).mean()\n",
+        "\n",
+        "fig, axs = plt.subplots(ncols=1, nrows=3, figsize=(12, 15))\n",
+        "\n",
+        "for ax, col in zip(axs.flat, ['price', 'rolling_12', 'rolling_24']):\n",
+        "  ax.plot(df.index, df[col])\n",
+        "  ax.set_title(f\"Time series {col}\")\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "d1f42a56",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(figsize=(15, 12))\n",
+        "ax.plot(df.index, df.price, label='price')\n",
+        "ax.plot(df.index, df.rolling_12, label='rolling mean 12')\n",
+        "ax.plot(df.index, df.rolling_24, label='rolling mean 24')\n",
+        "ax.legend()\n",
+        "plt.show()"
+      ],
+      "id": "61b68347",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "same concept using shif to lag data. \n",
+        "\n",
+        "\n",
+        "## Stationarity\n",
+        "\n",
+        "Stationarity when statistical properties (mean, variance, autocorrelation) are constant during time.\n",
+        "- *Low*\n",
+        "\n",
+        "  - $E[X_t] = \\mu,\\ \\forall t$ -> constant mean.\n",
+        "\n",
+        "  - $Var[X_t] = \\sigmaˆ2,\\ \\forall t$ -> constant var.\n",
+        "  \n",
+        "  - $Cov(X_t, X_{t+h}) = \\gamma (h),   \\forall t,\\ h$ -> autocovar depends only by h, the lag.\n",
+        "\n",
+        "- *Strong* -> join distribution $X_{t_1}, X_{t_2}, ... X_{t_n}$ invariant to traslation over time.\n",
+        "\n",
+        "Why it is so important?\n",
+        "\n",
+        "- *Predictive modelling*, for example with ARIMA, because this type of model assumes a stable data generation.\n",
+        "\n",
+        "- *Transformation techniques*, like differentiation, trend removal, log transformations.\n",
+        "\n",
+        "How to?\n",
+        "\n",
+        "1. Visualize data to understand if there is stationarity or not.\n",
+        "\n",
+        "2. Transformations:\n",
+        "\n",
+        "  - Diff.\n",
+        "    \n",
+        "    - Simple diff: $y'_t = y_t - t_{t-1}$ .\n",
+        "    - Seasonal diff: $y'_t = y_t - y_{t-s}$\n",
+        "\n",
+        "  - BoxCox transformation.\n",
+        "\n",
+        "    $$\n",
+        "    y(\\lambda) = \n",
+        "    \\begin{cases}\n",
+        "    \\frac{yˆ{\\lambda} - 1}{\\lambda},\\ if \\lambda \\neq 0;\\\\\n",
+        "    \\log y,\\ if \\lambda = 0.\n",
+        "    \\end{cases}\n",
+        "    $$\n",
+        "\n",
+        "  - Detrend: estimate and removal of the series trend.\n",
+        "\n",
+        "3. Stationarety statistical test\n",
+        "\n",
+        "- *A*ugmented *D*ickey-*F*uller: $\\Delta Y_t = \\alpha + \\beta t + \\gamma Y_{t-1} + \\sum_{i=1}^{p} \\delta_i \\Delta Y_{t-i} + \\epsilon_t$, where reject $H_0$ : not stationary if p < 0.05.\n",
+        "\n",
+        "  - *K*wiatkowski-*P*hilips-*S*chidt-*S*hin: $Y_t = \\mu + r_t + \\epsilon_t$, where $r_t$ is a random walk.\n",
+        "\n",
+        "## Practice"
+      ],
+      "id": "24552c9b"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "from statsmodels.tsa.stattools import adfuller\n",
+        "from scipy import stats\n",
+        "\n",
+        "flights = sns.load_dataset('flights')\n",
+        "flights\n",
+        "df = flights['passengers'].copy()\n",
+        "df.head()\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(12, 10))\n",
+        "ax.plot(df.index, df)\n",
+        "plt.show()"
+      ],
+      "id": "df6c907b",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "def make_adf(x):\n",
+        "  \n",
+        "  adf = adfuller(x)\n",
+        "\n",
+        "  print(f\"Statistic: {adf[0]}\")\n",
+        "  print(f\"p-value: {adf[1]}\")\n",
+        "\n",
+        "  if adf[1] <= 0.05:\n",
+        "    print('Stationary time series')\n",
+        "  else:\n",
+        "    print(\"Time sereis NOT stationary\")\n",
+        "\n",
+        "results = make_adf(df)"
+      ],
+      "id": "f08dc188",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "rolling_mean = df.rolling(12).mean()\n",
+        "rolling_var = df.rolling(12).var()\n",
+        "\n",
+        "fig, ax = plt.subplots(ncols=1, nrows=2, figsize=(12, 10))\n",
+        "ax[0].plot(rolling_mean, color='r', label='rolling mean')\n",
+        "ax[1].plot(rolling_var, color='g', label='rolling var')\n",
+        "plt.show()"
+      ],
+      "id": "32af9923",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "transformed, lmbda = stats.boxcox(df)\n",
+        "lmbda"
+      ],
+      "id": "19772a12",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "[!Note] The BoxCox transformation stabilize variance.\n"
+      ],
+      "id": "165a0b86"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "log_df = np.log(df) # a lambda close to 0 like 0.148 is similar to a log transformation\n",
+        "\n",
+        "log_df\n",
+        "fig, ax = plt.subplots(figsize=(12, 10))\n",
+        "ax.plot(log_df.index, log_df)\n",
+        "plt.show()"
+      ],
+      "id": "2ea22023",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "diff_df = df.diff().dropna()\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(12, 10))\n",
+        "plt.plot(diff_df.index, diff_df)\n",
+        "plt.show()"
+      ],
+      "id": "482950d3",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Lets check if the series is now stationary."
+      ],
+      "id": "e756e46e"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "make_adf(diff_df)"
+      ],
+      "id": "05af8e77",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "It is not stationary, but we are very close. There is also seasonality."
+      ],
+      "id": "8c7a032a"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "seas_diff_df = diff_df.diff(12).dropna() # differentiation at 12 period\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(12, 10))\n",
+        "plt.plot(seas_diff_df.index, seas_diff_df)\n",
+        "plt.show()\n",
+        "\n",
+        "\n",
+        "make_adf(seas_diff_df)"
+      ],
+      "id": "ea948149",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Doing this second diff to remove seasonality, we now have a stationary time series. It is time to create the final series with all the transformations."
+      ],
+      "id": "59df458d"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "ts = flights.passengers\n",
+        "ts.head()\n",
+        "\n",
+        "plt.plot(ts.index, ts)\n",
+        "plt.show()"
+      ],
+      "id": "9549cbb9",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "from statsmodels.tsa.stattools import adfuller\n",
+        "\n",
+        "print(\n",
+        "  f\"\"\"\n",
+        "    {'Stationary ts' if adfuller(ts)[1] <= 0.05 else 'Not stationary ts'}\n",
+        "    p-value: {adfuller(ts)[1] :.4f}\n",
+        "  \"\"\")"
+      ],
+      "id": "539a5656",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(ncols=1, nrows=4, figsize=(7, 10))\n",
+        "ax[0].plot(ts.index, ts, label='Original', color='blue')\n",
+        "ax[0].legend()\n",
+        "ax[1].plot(ts.index, np.log(ts), label='Log transformation', color='orange')\n",
+        "ax[1].legend()\n",
+        "ax[2].plot(ts.diff(1).dropna().index, np.log(ts).diff(1).dropna(), label='Diff_1', color='red')\n",
+        "ax[2].legend()\n",
+        "ax[3].plot(ts.diff(1).diff(12).dropna().index, np.log(ts).diff(1).diff(12).dropna(), label='Remove seasonality', color='green')\n",
+        "ax[3].legend()\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "b1312293",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Exercise"
+      ],
+      "id": "c09813d4"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "from statsmodels.tsa.stattools import adfuller\n",
+        "from scipy.stats import boxcox\n",
+        "\n",
+        "dj = sns.load_dataset('dowjones')\n",
+        "dj = dj.reset_index().drop('index', axis=1)\n",
+        "dj.columns = dj.columns.str.lower()\n",
+        "dj = dj.set_index('date')\n",
+        "dj.head()"
+      ],
+      "id": "072b3bc1",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "transformed, lmbda = boxcox(dj.price)\n",
+        "dj['price_log'] = transformed\n",
+        "dj.head()"
+      ],
+      "id": "24dd4642",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(ncols=1, nrows=5, figsize=(7, 12))\n",
+        "ax[0].plot(dj.index, dj.price, label=\"original\")\n",
+        "ax[1].plot(dj.index, dj.rolling(12).price.mean(), label=\"rolling\")\n",
+        "ax[2].plot(dj.index, dj.price_log, label='BoxCox')\n",
+        "ax[3].plot(dj.index, dj.price_log.diff(), label=\"Diff\")\n",
+        "ax[4].plot(dj.index, dj.price_log.diff().diff(12), label=\"Remove seasonality\")\n",
+        "\n",
+        "adfuller(dj.price_log.diff().dropna())\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "dd725922",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "pvalue = adfuller(dj.price_log)[1]\n",
+        "if pvalue <= 0.05:\n",
+        "  print(f\"Stationary | pvalue: {pvalue} :.4f\")\n",
+        "else:\n",
+        "  print(f\"Not stationary | pvalue: {pvalue} :.4f\")"
+      ],
+      "id": "0d8c1110",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "# Forecasting\n",
+        "\n",
+        "## Classic model\n",
+        "\n",
+        "### AR model\n",
+        "\n",
+        "*A*uto  *R*egressive model *AR(p)*. It is a regression on itself.\n",
+        "\n",
+        "$y_t = c + \\sum_{i=1}^{p} \\theta y_{t-i} + \\epsilon_t$\n",
+        "\n",
+        "$\\theta$: autoregressive coeficcients.\n",
+        "p: number of lagged elements.\n",
+        "$\\epsilon_t$: causal error at time t.\n",
+        "c: intercept.\n",
+        "\n",
+        "### MA model\n",
+        "\n",
+        "*M*oving *A*verage. Value at time t linearly dependent to previous forecasting errors.\n",
+        "\n",
+        "$y_t = c + \\sum_{i=1}^_{q} \\theta_{i}\\epsilon_{t-i}$\n",
+        "\n",
+        "$\\theta_i$: moving avg coefficients.\n",
+        "q: n lagged elements for MA.\n",
+        "$\\ epsilon_t$: causal errors at time t.\n",
+        "c: intercept.\n",
+        "\n",
+        "### ACF and PACF\n",
+        "\n",
+        "The selection of the parameters p and q depends on this models.\n",
+        "\n",
+        "#### AR model\n",
+        "\n",
+        "- PACF: where data are 0.\n",
+        "- ACF: decay to 0 esponentially or sinusoidally.\n",
+        "\n",
+        "#### MA model\n",
+        "\n",
+        "- ACF: where data are 0.\n",
+        "- PACF: decay to 0 esponentially or sinusoidally.\n",
+        "\n",
+        "#### ARMA model\n",
+        "\n",
+        "- Both plots decay.\n",
+        "- First lag on ACF depend on q from the MA model. After q, ACF decayment.\n",
+        "- First p lag on PACF depend on AR model. After p, PACF decay.\n",
+        "\n",
+        "### ARIMA\n",
+        "\n",
+        "*A*uto *R*egressive *I*ntegrated *M*oving *A*verage. Useful for non stationary data. It adds differentiation.\n",
+        "\n",
+        "$y'_t = c + \\sum_{i=1}_{q} \\theta_i y'_{t-i} + \\epsilon_t$\n",
+        "\n",
+        "- p: order of the autoregressive componenet.\n",
+        "- d: order of differentiation. Times of diff needed for stationarety.\n",
+        "- q: order of the moving avg component.\n",
+        "\n",
+        "It uses ACF, PACF and also:\n",
+        "\n",
+        "#### AIC\n",
+        "\n",
+        "*A*kaike *I*nformation *C*riterion.\n",
+        "\n",
+        "$AIC = 2\\log(L) + 2(p + q + k + 1)$\n",
+        "\n",
+        "#### BIC\n",
+        "\n",
+        "*B*ayesian *I*nformation *C*riterion.\n",
+        "\n",
+        "$BIC = AIC + [\\log(T) - 2](p + q + k + 1)$\n",
+        "\n",
+        "### SARIMA\n",
+        "\n",
+        "*S*easonal ARIMA. It extend the ARIMA model to non stationary situations.\n",
+        "\n",
+        "SARIMA(p, q, d)(P, Q, D, s)\n",
+        "\n",
+        "- p, non seasonal component order.\n",
+        "- P, seasonal component order.\n",
+        "...\n",
+        "- s, seaonality period.\n",
+        "\n",
+        "$(1 - \\theta B)(1 - \\Sigma B^4)(1 - B)( 1 - Bˆ4)y_t = (1 + \\Theta B)(1 + \\Theta Bˆ4)\\ epsilon_t$\n",
+        "\n",
+        "## Practice"
+      ],
+      "id": "84929f5a"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "from statsmodels.graphics.tsaplots import plot_acf, plot_pacf\n",
+        "from statsmodels.tsa.arima.model import ARIMA\n",
+        "from statsmodels.tsa.statespace.sarimax import SARIMAX\n",
+        "\n",
+        "flights = sns.load_dataset('flights')\n",
+        "df = flights['passengers']\n",
+        "df.plot(title='Flihts time series', figsize=(10, 7))\n",
+        "plt.show()"
+      ],
+      "id": "e7e78748",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "df_log = np.log(df)\n",
+        "df_log_diff = df_log.diff().diff(12).dropna()\n",
+        "\n",
+        "fig, ax = plt.subplots(1, 2, figsize=(12, 7))\n",
+        "plot_acf(\n",
+        "  x=df_log_diff,\n",
+        "  ax=ax[0],\n",
+        "  lags=40\n",
+        ")\n",
+        "plot_pacf(\n",
+        "  x=df_log_diff,\n",
+        "  ax=ax[1],\n",
+        "  lags=40\n",
+        ")\n",
+        "plt.show()"
+      ],
+      "id": "8cff007e",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "arima = ARIMA(df_log, order=[1, 1, 1]) # this makes the diff. 1 AR, 1 diff, 1 MA\n",
+        "arima_results = arima.fit()\n",
+        "arima_results.summary()"
+      ],
+      "id": "accce511",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "arima = ARIMA(df_log, order=[2, 1, 2], trend='t') # this makes the diff. 1 AR, 1 diff, 1 MA\n",
+        "arima_results = arima.fit()\n",
+        "arima_results.summary()"
+      ],
+      "id": "95445797",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "How to choose? As always, a test set solve the overfitting and generalize the results."
+      ],
+      "id": "fb3cf51c"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "forecast = arima_results.get_forecast(steps=24) # get the following 24 periods \n",
+        "pred_mean = forecast.predicted_mean\n",
+        "\n",
+        "plt.figure(figsize=(12, 10))\n",
+        "plt.plot(df_log, label='Original')\n",
+        "plt.plot(pred_mean.index, pred_mean, label='ARIMA', color='red')\n",
+        "plt.title(\"ARIMA (2, 1, 2) forecast'\")\n",
+        "plt.show()"
+      ],
+      "id": "622cde88",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "SARIMA"
+      ],
+      "id": "c64dbd70"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "sarima = SARIMAX(df_log, order=(1,1,1), seasonal_order=(0,1,1,12))\n",
+        "sarima_result = sarima.fit()\n",
+        "sarima_result.summary()\n",
+        "\n",
+        "forecast = sarima_result.get_forecast(steps=24) # get the following 24 periods \n",
+        "pred_mean = forecast.predicted_mean\n",
+        "\n",
+        "plt.figure(figsize=(12, 10))\n",
+        "plt.plot(df_log, label='Original')\n",
+        "plt.plot(pred_mean.index, pred_mean, label='SARIMA', color='red')\n",
+        "plt.title(\"SARIMA (2, 1, 2) (0,1,1,1c) forecast'\")\n",
+        "plt.show()"
+      ],
+      "id": "d18f51ea",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Exercise"
+      ],
+      "id": "ff873c6a"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "import statsmodels.api as sm\n",
+        "\n",
+        "from skforecast.datasets import fetch_dataset\n",
+        "\n",
+        "df = fetch_dataset(name='fuel_consumption', raw=True)\n",
+        "df = df[['Fecha', 'Gasolinas']]\n",
+        "df['date'] = pd.to_datetime(df.Fecha)\n",
+        "ts = df.set_index('date')['Gasolinas']\n",
+        "ts"
+      ],
+      "id": "8803d74a",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(figsize=(12, 10))\n",
+        "ax.plot(ts.index, ts)\n",
+        "plt.show()"
+      ],
+      "id": "defd84cd",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### EDA\n",
+        "\n",
+        "#### Trend"
+      ],
+      "id": "c316f137"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "from statsmodels.tsa.stattools import adfuller\n",
+        "\n",
+        "def adf_test(x):\n",
+        "\n",
+        "  result = adfuller(x)\n",
+        "\n",
+        "  if result[1] <= 0.05:\n",
+        "    print(f\"Reject H0: Time series is STATIONARY\")\n",
+        "  else:\n",
+        "    print(\"Failed to reject H0: Time series is NON-STATIONARY\")\n",
+        "\n",
+        "  return result\n",
+        "\n",
+        "adf_test(ts)"
+      ],
+      "id": "153eb7a3",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "adf_test(ts.diff().dropna())"
+      ],
+      "id": "4b24de06",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(1, 2, figsize=(12, 10))\n",
+        "ax[0].plot(np.log(ts).diff(1).diff(12).dropna(), label=\"Log and diff\", color=\"red\")\n",
+        "ax[1].plot(ts.index, ts, label='Original')\n",
+        "ax[0].legend()\n",
+        "ax[1].legend()\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "95e1c608",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "adf_test(np.log(ts).diff(1).diff(12).dropna())"
+      ],
+      "id": "8081f549",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "from scipy.stats import boxcox\n",
+        "\n",
+        "transformed, lmbda = boxcox(ts)\n",
+        "\n",
+        "ts_lambda = ts.copy()\n",
+        "ts_lambda.iloc[:] = transformed"
+      ],
+      "id": "65a3d57c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(3, 1, figsize=(12, 10))\n",
+        "ax[0].plot(np.log(ts).diff(1).diff(12).dropna(), label=\"Log and diff\", color=\"red\")\n",
+        "ax[1].plot(ts_lambda.diff(1).diff(12).dropna(), label=\"transformed lambda 0.75\", color=\"green\")\n",
+        "ax[2].plot(ts.index, ts, label='Original')\n",
+        "ax[0].legend()\n",
+        "ax[1].legend()\n",
+        "ax[2].legend()\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "58f7649e",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "#### Models\n"
+      ],
+      "id": "4d464386"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "from statsmodels.graphics.tsaplots import plot_acf, plot_pacf\n",
+        "\n",
+        "fig, ax = plt.subplots(4, 1, figsize=(12, 10))\n",
+        "ax[0].plot(ts.index, ts, label=\"Original\")\n",
+        "ax[1].plot(np.log(ts).diff(1).diff(12).dropna(), label=\"Transformed\")\n",
+        "plot_acf(x=np.log(ts).diff(1).diff(12).dropna(),ax=ax[2], lags=60)\n",
+        "plot_pacf(x=np.log(ts).diff(1).diff(12).dropna(), ax=ax[3], lags=60)\n",
+        "for a in ax.flat:\n",
+        "  a.legend()\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "a31d5f7a",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "*S*easonal *A*uto*R*egressive *I*ntegrated *M*oving *A*verage.\n",
+        "\n",
+        "$SARIMA(p, d, q)(P, D, Q, s)$, where:\n",
+        "\n",
+        "- *p* = autoregressive order.\n",
+        "- *d* = number of non-seasonal differences.\n",
+        "   n of regular differences applied to make it stationary.\n",
+        "- *q* = moving average order.\n",
+        "- *P* = seasonal autoregressive order.\n",
+        "- *D* = seasonal differencing order.\n",
+        "    n of seasonal differences.\n",
+        "- *Q* = seasonal movin average order.\n",
+        "- *s* = length of the seasonal period. Eg.: 12 for monthly data.\n",
+        "\n",
+        "It is important to remove seasonality with seasonal differencing to make data stationary.\n",
+        "\n",
+        "$$\n",
+        "(1 - \\phi_1 B)(1 - \\Phi_1 B^s)(1 - B)(1 - B^s)y_t = (1 + \\theta_1 B)(1 + \\Theta_1 B^s)\\epsilon_t\n",
+        "$$\n",
+        "\n",
+        "*$y_t$* = observed time series at time t.\n",
+        "*B* = backshift operator or lag.\n",
+        "*$\\phi_1$* = non-seasonal autoregressive coefficient.\n",
+        "*$\\Phi_1$* = seasonal autoregresive coefficient.\n",
+        "*$\\theta_1$* = non-seasonal moving average coefficient.\n",
+        "*$\\Theta_1$* = seasonal moving average coefficient.\n",
+        "*s* = seasonal period.\n",
+        "*$\\epsilon_t$* = white noise error term.\n",
+        "\n",
+        "\n",
+        "*ACF* measures the *correlation* between the time series and its lagged values.\n",
+        "\n",
+        "- *AR* if *decays gradually*.\n",
+        "- *MA* if *cuts off sharply*.\n",
+        "\n",
+        "*PACF* measures the *correlation* between the timne series and its lagged values, * controlling* for the correlations at intermediate lags.\n",
+        "\n",
+        "- *AR* if *cuts off sharply*.\n",
+        "- *MA* if *decays gradually*.\n",
+        "\n",
+        "* non seasonal -> p, d, q.\n",
+        "* seasonal = P, D, Q, s.\n",
+        "d and D depends on the number of differentiation I had to do to make the serie stationary.\n",
+        "s depends on the data: for monthly data, 12.\n",
+        "number of NON SEASONAL components (1,2,3, ...):\n",
+        "q depends on ACF.\n",
+        "p depends on PACF.\n",
+        "number of SEASONAL components (12, 24, ...):\n",
+        "Q depends on ACF\n",
+        "P depends on PACF"
+      ],
+      "id": "b8920428"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "from statsmodels.tsa.statespace.sarimax import SARIMAX\n",
+        "\n",
+        "p, d, q = 2, 1, 1\n",
+        "P, D, Q, s = 2, 1, 1, 12 \n",
+        "sarima = SARIMAX( np.log(ts), order=(p,d,q), seasonal_order=(P, D, Q, s))\n",
+        "\n",
+        "results = sarima.fit()\n",
+        "print(results.summary())"
+      ],
+      "id": "16a8f9c4",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "fig, ax = plt.subplots(4, 1, figsize=(12, 10))\n",
+        "ax[0].plot(ts_lambda.index, ts_lambda, label=\"Original\")\n",
+        "ax[1].plot(ts_lambda.diff(1).diff(12).dropna(), label=\"Transformed\")\n",
+        "plot_acf(ts_lambda.diff(1).diff(12).dropna(),ax=ax[2], lags=60)\n",
+        "plot_pacf(x=ts_lambda.diff(1).diff(12).dropna(), ax=ax[3], lags=60)\n",
+        "for a in ax.flat:\n",
+        "  a.legend()\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "7550261d",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "forecast_steps = 12\n",
+        "forecast = results.get_forecast(steps=forecast_steps)\n",
+        "\n",
+        "forecast_mean = forecast.predicted_mean\n",
+        "forecast_ci = forecast.conf_int()\n",
+        "\n",
+        "forecast_mean_inverse = np.exp(forecast_mean)\n",
+        "forecast_ci_inverse = np.exp(forecast_ci)\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(15, 10))\n",
+        "\n",
+        "ax.plot(ts.index[400:], ts[400:], label=\"Original data\")\n",
+        "ax.plot(forecast_ci_inverse.index, forecast_ci_inverse, label=\"CI\", color='green', linestyle='dashed')\n",
+        "ax.plot(forecast_mean_inverse.index, forecast_mean_inverse, label=\"Prediction\", color='red')\n",
+        "ax.legend()\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "b4c85774",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Covid exogenous variable"
+      ],
+      "id": "97057cef"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "intervention = pd.Series(0, index=ts.index)\n",
+        "intervention[\"2020-03\":\"2020-12\"] = 1\n",
+        "p, d, q = 2, 1, 1\n",
+        "P, D, Q, s = 2, 1, 1, 12 \n",
+        "\n",
+        "sarima_x = SARIMAX(\n",
+        "  np.log(ts),\n",
+        "  order=(p,d,q),\n",
+        "  seasonal_order=(P, D, Q, s),\n",
+        "  exog=intervention\n",
+        ")\n",
+        "\n",
+        "results_x = sarima_x.fit()\n",
+        "print(results_x.summary())"
+      ],
+      "id": "2dee203d",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "future_intervention = pd.Series(0, index=range(forecast_steps))\n",
+        "\n",
+        "forecast_x = results_x.get_forecast(\n",
+        "  steps=forecast_steps,\n",
+        "  exog=future_intervention\n",
+        ")\n",
+        "forecast_mean_x = np.exp(forecast_x.predicted_mean)\n",
+        "forecast_ci_x = np.exp(forecast_x.conf_int())\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(15, 10))\n",
+        "\n",
+        "ax.plot(ts.index[400:], ts[400:], label=\"Original data\")\n",
+        "ax.plot(forecast_ci_x.index, forecast_ci_x, label=\"CI\", color='green', linestyle='dashed')\n",
+        "ax.plot(forecast_mean_x.index, forecast_mean_x, label=\"Prediction\", color='red')\n",
+        "ax.legend()\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ],
+      "id": "971b18a5",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "#### Exponential smoothing\n",
+        "\n",
+        "Here I need to count for trend, level and seasonality --> Holt-Winters."
+      ],
+      "id": "6ef89161"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "from statsmodels.tsa.api import ExponentialSmoothing\n",
+        "\n",
+        "model = ExponentialSmoothing(\n",
+        "  ts,\n",
+        "  seasonal_periods=12, # monthly data\n",
+        "  trend=\"add\",\n",
+        "  seasonal=\"mul\"\n",
+        ")\n",
+        "\n",
+        "fit = model.fit()\n",
+        "\n",
+        "forecast = fit.forecast(steps=12)\n",
+        "\n",
+        "fit.aic, fit.summary()"
+      ],
+      "id": "0e25877a",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "# ML and DL for Time Series\n",
+        "\n",
+        "## Theory\n",
+        "\n",
+        "## RNN\n",
+        "\n",
+        "*R*ecurrent *N*eural *N*etwork are useful with sequential data. It uses the concept of memory, meaning the previous information is used in the next steps. *Hidden state* makes possible the information sharing between layers.\n",
+        "There is a problem: *vanishing gradient*, meaning the gradient tends to be smaller the longer the NN. This slows down the computation. LSTM and GRU help to solve this problem.\n",
+        "*L*ong *S*hort *T*erm *M*emory, a type of RNN useful for time series.\n",
+        "\n",
+        "- **Cell state** preserve the memory.\n",
+        "- **Gates**, input door (**input**, **forget** and **output**) to manage the information flow and let the model save and drop informations.\n",
+        "\n",
+        "*G*ated *R*ecurrent *U*nit, a simplified LSTM which binds forget and input in a single gate to improve computational performance.\n",
+        "\n",
+        "*C*onvulutional *N*eural *N*etwork can be used for time series analysis. Good for local dependencies, bad on the long term one. Useful in combination with previous one.\n",
+        "\n",
+        "## Prophet\n",
+        "\n",
+        "Addictive model for time series with a strong seasonal, holiday and trend shift.\n",
+        "\n",
+        "$y(t) = g(t) + s(t) + h(t) + \\epsilon_t$\n",
+        "\n",
+        "- g(t) = trend.\n",
+        "- s(t) = seasonality.\n",
+        "- h(t) = holidays.\n",
+        "- $\\epsilon_t$ = residual noise.\n",
+        "\n",
+        "### Pro\n",
+        "\n",
+        "- outlier and missing values handling.\n",
+        "- robust.\n",
+        "- quick training.\n",
+        "- automatically find seasonality.\n",
+        "\n",
+        "### Cons\n",
+        "\n",
+        "- Less flexibility.\n",
+        "- Addictive model does not work well with multiplicative data, for example for variance.\n",
+        "\n",
+        "## Accuracy\n",
+        "\n",
+        "### Metrics \n",
+        "\n",
+        "*M*ean *A*bsolute *E*rror: $MAE = \\frac{1}{n} \\sum_{i=1}^{n} |Y_i - \\hat{Y_i}|$\n",
+        "  \n",
+        "- avg absolute error -> precision.\n",
+        "- robust to outlier.\n",
+        "\n",
+        "*R*oot *MSE*: $RMSE = \\sqrt{ \\frac{1}{n} \\sum_{i=1}^{n} (Y_i - \\hat{Y_i})^2 }$\n",
+        "\n",
+        "  - better penality for big errors. \n",
+        "\n",
+        "*M*ean *A*bsolute *P*ercentage *E*rror: $MAPE = \\frac{100}{n} \\sum_{i=1}^{n} \\left| \\frac{Y_i - \\hat{Y_i}}{Y_i} \\right|$\n",
+        "\n",
+        "  - Mean of the percentage errors.\n",
+        "  - It does not depends on the data scale.\n",
+        "\n",
+        "### Plots\n",
+        "\n",
+        "Using plots, *forecast vs actuals*, *residual analysis*.\n",
+        "\n",
+        "### Model comparison\n",
+        "\n",
+        "- Benchmarking with naive models.\n",
+        "- Cross validation.\n",
+        "\n",
+        "  - avoid data leakage and time dependencies.\n",
+        "  - makes the model robust to new data.\n",
+        "\n",
+        "  - techniques:\n",
+        "    \n",
+        "    - Fixed or Rolling forecast origin, which fit on a moving window and test it on the next value.\n",
+        "    - Time series split, keeps the order of the observations.\n",
+        "\n",
+        "## Practice"
+      ],
+      "id": "fdbe63ac"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "\n",
+        "from sklearn.preprocessing import MinMaxScaler\n",
+        "from sklearn.metrics import root_mean_squared_error\n",
+        "\n",
+        "import tensorflow as tf\n",
+        "from tensorflow.keras.models import Sequential\n",
+        "from tensorflow.keras.layers import Dense, LSTM, Conv1D, MaxPooling1D, Flatten, Input\n",
+        "\n",
+        "from prophet import Prophet\n",
+        "import logging\n",
+        "\n",
+        "logging.getLogger('cmdstanpy').setLevel(logging.ERROR)"
+      ],
+      "id": "398b8df0",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Exercise"
+      ],
+      "id": "e76c4d7e"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "/Users/simonebrazzi/.pyenv/versions/ml_adv/share/jupyter/kernels/python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}

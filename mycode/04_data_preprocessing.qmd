@@ -1,0 +1,642 @@
+---
+author: "Simone Brazzi"
+title: "Data preprocessing"
+theme:
+  dark: darkly
+  light: flatly
+---
+
+# Theory
+
+A *structured sequence of transforms* which enables automation, scalability and ease of implementation.
+
+- *Feature engineering* -> knowledge based or quantitative one (correlation, e.g.).
+- *Feature scaling* -> add column as a combination of other.
+- *Missing data* -> data cleaning with **imputing** or **removing**.
+- *Feature scaling* -> outlier detection. **Standardization** (same min max) and **normalization** (z scaling Z~(0, 1)) deal with it.
+
+# Practice
+
+## Functional approach
+
+
+```{python}
+import pandas as pd
+import numpy as np
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, TargetEncoder
+
+# generate a df
+np.random.seed(42)
+data = pd.DataFrame({
+  'feature1' : np.random.randint(1, 100, 20),
+  'feature2' : np.random.uniform(1, 50, 20),
+  'feature3' : np.append(np.random.normal(50, 10, 19), np.nan),
+  'feature4' : np.random.randint(1, 100, 20)
+})
+
+def add_column(df, column):
+  df['feature5'] = df[column] * 2 
+  return df
+
+def drop_column(df, column):
+  df = df.drop(column, axis=1)
+  return df
+
+def make_normalization(df, column_name):
+  minmax = MinMaxScaler()
+  df[column_name] = minmax.fit_transform(df[[column_name]])
+  return df
+
+def make_standardization(df, column_name):
+  ss = StandardScaler()
+  df[column_name] = ss.fit_transform(df[[column_name]])
+  return df
+
+def handle_missing_data(df, column, strategy):
+  imputer = SimpleImputer(strategy=strategy)
+  df[column] = imputer.fit_transform(df[[ column ]])
+  return df
+
+def handle_outlier(df):
+  
+  for column in df.select_dtypes(include=['float64', 'int64', 'number']).columns:
+    q1 =  df[column].quantile(0.25)
+    q3 =  df[column].quantile(0.75)
+    iqr = q3 - q1
+    lb = q1 - 1.5 * iqr
+    ub = q3 + 1.5 * iqr
+
+    df = df[(df[column] >= lb) & (df[column] <= ub)]
+  return df
+
+def preprocessing(df):
+
+  df = add_column(df, 'feature1')
+  df = drop_column(df, 'feature4')
+  df = make_normalization(df, 'feature1')
+  df = make_standardization(df, 'feature2')
+  df = handle_missing_data(df, 'feature3', strategy='median')
+  df = handle_outlier(df)
+  return df
+
+data.head()
+data.info()
+```
+
+
+```{python}
+df = preprocessing(data)
+print(df.head())
+```
+
+## Pipeline based approach
+
+```{python}
+import pandas as pd
+import numpy as np
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+
+# generate a df
+np.random.seed(42)
+data = pd.DataFrame({
+  'feature1' : np.random.randint(1, 100, 20),
+  'feature2' : np.random.uniform(1, 50, 20),
+  'feature3' : np.append(np.random.normal(50, 10, 19), np.nan),
+  'feature4' : np.random.randint(1, 100, 20)
+})
+```
+Pipelines can't modfy dimensions and shape of the object passed to it, so not all steps are possible.
+
+
+```{python}
+preprocessing_pipeline = Pipeline(steps=[
+  ('Normalization', MinMaxScaler()),
+  ('Standardization', StandardScaler()),
+  ('MissinDataHandling', SimpleImputer(strategy='median'))
+  ])
+
+df_pipe = preprocessing_pipeline.fit_transform(data)
+print(df[:5])
+```
+# Advanced Preprocessing 
+
+Column Transformer:
+- flexibility.
+- apply different type of transformations.
+
+Make Pipeline:
+- short and simply.
+
+## Encoding techniques
+
+- *One Hot Encoding* -> n-1 dummy variables.
+  - variables independence.
+  - dimensionality course.
+- *Label Encoding* -> transform categorical to numeric variable.
+  - easy.
+  - not human understandable.
+- *Ordinal Encoding* -> same as label encoding, but using the intrinsic order.
+  - keeps interpretability.
+  - subjective order.
+- *Frequency Encoding* -> frequency substitute the label.
+  - high cardinality variables.
+  - not human understandable.
+- *Target and LOO Encoding* -> instead of frequency, mean of the target's values of the labels.
+  - high correlation between target and transformed variable.
+  - overfitting (target) or computational cost (LOO).
+
+# Practice 
+
+```{python}
+import pandas as pd
+import numpy as np
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler, MinMaxScaler
+from category_encoders import LeaveOneOutEncoder, CountEncoder, TargetEncoder
+
+np.random.seed(42)
+data = pd.DataFrame({
+  'feature1' : np.append(np.random.randint(1, 100, 35), [np.nan, np.nan, 45]),
+  'feature2' : np.append(np.random.uniform(1, 50, 35), [np.nan, 25.5, np.nan]),
+  'feature3' : np.random.choice(['A', 'B', 'C', 'D', 38]),
+  'feature4' : np.random.choice(['Low', 'Medium', 'High'], 38),
+  'feature5' : np.random.choice([ 'Yes', 'No'], 38),
+  'feature6' : np.random.choice(['cat1', 'cat2', 'cat3'], 38),
+  'feature7': np.random.choice(['Turin', 'Milan', 'Florence', 'Rome', 'Naples', 'Palermo'], 38),
+  'target' : np.random.randint(0, 2, 38)
+})
+
+features_numerical = ['feature1', 'feature2']
+features_categorical = ['feature3', 'feature4', 'feature5', 'feature6', 'feature7']
+features_cateorical_numerical = ['feature4', 'feature5', 'feature6']
+cols_onehot = [f"feature3_{val}" for val in data.feature3.dropna().unique()] 
+
+pipe_numerical = Pipeline(steps=[
+  ('imputer', SimpleImputer(strategy="median")),
+  ("scaler", MinMaxScaler())
+])
+pipe_categorical = ColumnTransformer([
+  ('ohe', OneHotEncoder(), ['feature3']),
+  ('ordinal', OrdinalEncoder(categories=[['Low', 'Medium', 'High']], handle_unknown='error'), ['feature4']),
+  ('frequency', CountEncoder(), ['feature7']),
+  ('target', TargetEncoder(), ['feature5']),
+  ('loo', LeaveOneOutEncoder(), ['feature6'])
+])
+pipe = ColumnTransformer([
+  ('numerical', pipe_numerical, features_numerical),
+  ('categorical', pipe_categorical, features_categorical)
+])
+
+x = data.drop(columns=['target'])
+y = data.target
+
+preprocessed_x = pd.DataFrame(pipe.fit_transform(x, y), columns=pipe.get_feature_names_out())
+preprocessed_x[features_cateorical_numerical] = pipe_numerical.fit_transform(preprocessed_x[features_cateorical_numerical])
+
+print(data)
+```
+
+
+```{python}
+print(preprocessed_x)
+```
+
+# Exercise
+
+
+```{python}
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import numpy as np 
+
+from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
+from category_encoders import 
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+
+titanic = sns.load_dataset('titanic')
+titanic.head()
+```
+
+```{python}
+x, y = titanic.drop(columns=['survived', 'alive']), titanic.survived
+x.head()
+```
+*Features variables*
+- pclass is the same as class, just int vs str.
+- sex -> binary variable.
+- age -> it could be usefule to create age bins.
+- sibsp -> need to check. 
+- fare -> normalization.
+- embarked/embark_town -> the first is the first letter of the city.
+- who -> it is a combination of sex and age to have a difference from adults and child.
+- adult_male -> combination of sex and who.
+- decks -> lots of NA, which mean there could have not been the deck name. idea could be to put None or Z, for example.
+  
+
+*Target variable* -> survived/alive, where the former is numeric, the latter the label. 0 = 'no'.
+
+`sklearn.compose.ColumnTransformer()` makes possible to applies multiple transformation to different type of columns, using the `skelarn.pipeline.Pipeline()`. At this [link](https://scikit-learn.org/stable/auto_examples/compose/plot_column_transformer_mixed_types.html) an example from the official documentation. Incidentally, it is on the same dataset.
+
+```{python}
+features_numerical = ['pclass', 'age', 'fare']
+features_categorical = ['sex', 'embark_town', 'decks']
+
+```
+
+
+```{python}
+x[features_numerical].info()
+```
+
+### Age
+- impute median.
+- normalize.
+
+```{python}
+x.age.describe()
+x.age.isna().sum()
+```
+### pcclass
+- it does not need transformations.
+```{python}
+x.pclass.describe()
+```
+### fare 
+- standardization.
+
+```{python}
+x.fare.describe()
+```
+### sex
+- ohe 
+
+```{python}
+x.sex.value_counts()
+```
+
+### embark_town
+- label encoding 
+
+```{python}
+x.embark_town.value_counts()
+```
+### decks
+- 
+
+```{python}
+x.deck.head()
+x.deck.value_counts().sum()
+x.deck.isna().sum()
+```
+
+
+
+```{python}
+xtrain, xtest, ytrain, ytest = train_test_split(x, y, test_size=.2, random_state=42)
+preprocessor = ColumnTransformer(transformers=[
+  ('sex_ohe', OneHotEncoder(drop='first'), ['sex']),
+  ('age', Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='median')),
+    ('scaler', MinMaxScaler())
+  ]), ['age']),
+  ('fare', StandardScaler(), ['fare']),
+  ('embark_town', OneHotEncoder(drop='first'), ['embark_town']),
+  ('deck', Pipeline(steps=[
+    ('deck_imputer', SimpleImputer(strategy='constant', fill_value='Z')),
+    ('deck_encoder', TargetEncoder())
+  ]), ['deck'])
+   ])
+
+preprocessor.fit(xtrain, ytrain)
+```
+
+Solution by the course
+
+
+```{python}
+from category_encoders import LeaveOneOutEncoder
+import pandas as pd 
+import numpy as np 
+import seaborn as sns 
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, MinMaxScaler, StandardScaler
+
+def outlier_removal(df, columns, threshold):
+  df_winsorized = df.copy()
+  for column in columns: 
+    q1 = df[column].quantile(0.25)
+    q3 = df[column].quantile(0.75)
+    iqr = q3 - q1
+    lb = q1 - threshold * iqr
+    ub = q3 + threshold * iqr
+    df_winsorized[column] = np.where(df[column] < lb, lb, df[column])
+    df_winsorized[column] = np.where(df[column] > ub, ub, df[column])
+
+  return df_winsorized
+
+features_numerical = ['age', 'fare', 'sibsp']
+features_categorical = ['class', 'who', 'deckclass', 'embark_town']
+features_cateorical_numerical = ['class', 'deckclass', 'embark_town']
+
+df = sns.load_dataset('titanic')
+df = df[['class', 'who', 'deck', 'embark_town', 'age', 'fare', 'sibsp', 'survived']]
+df['deckclass'] = np.where(df.deck.notna() & df['class'].notna(), df.deck.astype(str) + df["class"].astype(str), np.nan)
+df.drop(columns=['deck'], axis=1, inplace=True)
+
+df = outlier_removal(df, features_numerical, 1.5)
+x = df.drop(columns=['survived'], axis=1)
+y = df.survived
+
+ohe_cols = [f"who_{val}" for val in df.who.dropna().unique()]
+
+pipe_numerical = make_pipeline(
+  SimpleImputer(strategy='median'),
+  MinMaxScaler()
+)
+pipe_categorical = ColumnTransformer([
+  ('ohe', OneHotEncoder(handle_unknown='ignore'), ['who']),
+  ('ordinal', OrdinalEncoder(categories=[['First', 'Second', 'Third']]), ['class']),
+  ('loo', LeaveOneOutEncoder(), ['embark_town', 'deckclass'])
+])
+
+```
+
+```{python}
+pipe = ColumnTransformer([
+  ('numerical', pipe_numerical, features_numerical),
+  ('categorical', pipe_categorical, features_categorical)
+])
+
+preprocessed_x = pd.DataFrame(
+  pipe.fit_transform(x, y),
+  columns=features_numerical + ohe_cols + ['class', 'deckclass', 'embark_town']
+)
+preprocessed_x[features_cateorical_numerical] = pipe_numerical.fit_transform((preprocessed_x[features_cateorical_numerical]))
+
+print(df)
+print(preprocessed_x)
+```
+
+# Practice 
+
+Pipeline + prediction.
+
+
+```{python}
+from category_encoders import LeaveOneOutEncoder
+import pandas as pd 
+import numpy as np 
+import seaborn as sns 
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, MinMaxScaler, StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+
+def outlier_removal(df, columns, threshold):
+  df_winsorized = df.copy()
+  for column in columns: 
+    q1 = df[column].quantile(0.25)
+    q3 = df[column].quantile(0.75)
+    iqr = q3 - q1
+    lb = q1 - threshold * iqr
+    ub = q3 + threshold * iqr
+    df_winsorized[column] = np.where(df[column] < lb, lb, df[column])
+    df_winsorized[column] = np.where(df[column] > ub, ub, df[column])
+
+  return df_winsorized
+
+features_numerical = ['age', 'fare', 'sibsp']
+features_categorical = ['class', 'who', 'deckclass', 'embark_town']
+features_cateorical_numerical = ['class', 'deckclass', 'embark_town']
+target_column = ['survived']
+
+df = sns.load_dataset('titanic')
+df = df[['class', 'who', 'deck', 'embark_town', 'age', 'fare', 'sibsp', 'survived']]
+df['deckclass'] = np.where(df.deck.notna() & df['class'].notna(), df.deck.astype(str) + df["class"].astype(str), np.nan)
+df.drop(columns=['deck'], axis=1, inplace=True)
+
+df = outlier_removal(df, features_numerical, 1.5)
+x = df.drop(columns=['survived'], axis=1)
+y = df.survived
+
+xtrain, xtest, ytrain, ytest = train_test_split(x, y, test_size=.2, random_state=42)
+
+param_grid = {
+  'classifier__C' : [ 0.001, 0.1, 0.5, 1, 5, 10, 50, 100],
+  'classifier__solver' : ['liblinear', 'saga;, ; newton-cg', 'lbfgs', 'cholesky'],
+  'classifier__max_iter' : [100, 200, 500, 1000],
+  'classifier__penalty' : ['l1', 'l2']
+}
+
+pipe_numerical = make_pipeline(
+  SimpleImputer(strategy='median'),
+  MinMaxScaler()
+)
+pipe_categorical = ColumnTransformer([
+  ('ohe', OneHotEncoder(handle_unknown='ignore'), ['who']),
+  ('ordinal', OrdinalEncoder(categories=[['First', 'Second', 'Third']]), ['class']),
+  ('loo', LeaveOneOutEncoder(), ['embark_town', 'deckclass'])
+])
+
+pipe_preprocessing = ColumnTransformer([
+  ('numerical', pipe_numerical, features_numerical),
+  ('categorical', pipe_categorical, features_categorical)
+])
+pipe = Pipeline(steps=[
+  ('preprocessing', pipe_preprocessing),
+  ('classifier', LogisticRegression())
+])
+
+pipe.fit(xtrain, ytrain)
+ytest_pred = pipe.predict(xtest)
+accuracy_test = accuracy_score(ytest, ytest_pred)
+print(f"TEST accuracy: {accuracy_test}")
+```
+
+Pipeline with `GridSearchCV()` optimization.
+```{python}
+from category_encoders import LeaveOneOutEncoder
+import pandas as pd 
+import numpy as np 
+import seaborn as sns 
+from sklearn.model_selection import GridSearchCV
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, MinMaxScaler, StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+
+def outlier_removal(df, columns, threshold):
+  df_winsorized = df.copy()
+  for column in columns: 
+    q1 = df[column].quantile(0.25)
+    q3 = df[column].quantile(0.75)
+    iqr = q3 - q1
+    lb = q1 - threshold * iqr
+    ub = q3 + threshold * iqr
+    df_winsorized[column] = np.where(df[column] < lb, lb, df[column])
+    df_winsorized[column] = np.where(df[column] > ub, ub, df[column])
+
+  return df_winsorized
+
+features_numerical = ['age', 'fare', 'sibsp']
+features_categorical = ['class', 'who', 'deckclass', 'embark_town']
+features_cateorical_numerical = ['class', 'deckclass', 'embark_town']
+target_column = ['survived']
+
+df = sns.load_dataset('titanic')
+df = df[['class', 'who', 'deck', 'embark_town', 'age', 'fare', 'sibsp', 'survived']]
+df['deckclass'] = np.where(df.deck.notna() & df['class'].notna(), df.deck.astype(str) + df["class"].astype(str), np.nan)
+df.drop(columns=['deck'], axis=1, inplace=True)
+
+df = outlier_removal(df, features_numerical, 1.5)
+x = df.drop(columns=['survived'], axis=1)
+y = df.survived
+
+xtrain, xtest, ytrain, ytest = train_test_split(x, y, test_size=.2, random_state=42)
+
+param_grid = {
+  'classifier__C' : [ 0.001, 0.1, 0.5, 1, 5, 10, 50, 100],
+  'classifier__solver' : ['liblinear', 'saga;, ; newton-cg', 'lbfgs', 'cholesky'],
+  'classifier__max_iter' : [100, 200, 500, 1000],
+  'classifier__penalty' : ['l1', 'l2']
+}
+
+pipe_numerical = make_pipeline(
+  SimpleImputer(strategy='median'),
+  MinMaxScaler()
+)
+pipe_categorical = ColumnTransformer([
+  ('ohe', OneHotEncoder(handle_unknown='ignore'), ['who']),
+  ('ordinal', OrdinalEncoder(categories=[['First', 'Second', 'Third']]), ['class']),
+  ('loo', LeaveOneOutEncoder(), ['embark_town', 'deckclass'])
+])
+
+pipe_preprocessing = ColumnTransformer([
+  ('numerical', pipe_numerical, features_numerical),
+  ('categorical', pipe_categorical, features_categorical)
+])
+pipe = Pipeline(steps=[
+  ('preprocessing', pipe_preprocessing),
+  ('classifier', LogisticRegression())
+])
+
+grid_search = GridSearchCV(
+  pipe, 
+  param_grid, 
+  cv=5,
+  scoring='accuracy'
+)
+grid_search.fit(xtrain, ytrain)
+ytest_pred = grid_search.predict(xtest)
+accuracy_test = accuracy_score(ytest, ytest_pred)
+print(f"GridSearch TEST accuracy: {accuracy_test}")
+```
+
+# Exercise 
+
+using `sklearn.datasets.wine()`
+
+
+```{python}
+import pandas as pd 
+import numpy as np 
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.datasets import load_wine
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+
+from sklearn.metrics import accuracy_score
+```
+
+
+```{python}
+wine = load_wine(as_frame=True)
+print(f"{wine.DESCR}")
+```
+
+Considering all the features are numerical variable, it is worth do a check. the documentation also says there are not missing values.
+
+
+```{python}
+x, y = wine.data, wine.target
+
+xtrain, xtest, ytrain, ytest = train_test_split(x, y, test_size=.2, random_state=42)
+xtrain.describe()
+```
+
+
+```{python}
+def windsorizer(x, columns, threshold):
+
+  df = x.copy()
+  q1 = df[columns].quantile(.25)
+  q3 = df[columns].quantile(.75)
+  iqr = q3 - q1
+  lb = q1 - iqr * threshold
+  ub = q3 + iqr * threshold
+  df[columns] = df[columns].clip(lower=lb, upper=ub, axis=1)
+
+  return df
+
+xtrain_clean = windsorizer(xtrain, xtrain.columns, 1.5)
+```
+
+```{python}
+pipe = Pipeline(steps=[
+  ('preprocessor', RobustScaler()),
+  ('rtc', RandomForestClassifier())
+])
+
+pipe.fit(xtrain_clean, ytrain)
+
+ypred = pipe.predict(xtest)
+accuracy_test = accuracy_score(ytest, ypred)
+print(accuracy_test)
+```
+
+```{python}
+param_grid = {
+  'preprocessor__with_centering' : [True, False],
+  'preprocessor__with_scaling' : [True, False],
+  'rtc__n_estimators' : [5, 10, 25, 50, 100, 150, 200],
+  'rtc__criterion' : ['gini', 'entropy', 'log_loss'],
+  'rtc__max_depth' : [5, 10, 15, 20, 25],
+  'rtc__min_samples_split' : [2, 5, 10]
+}
+
+grid_search = GridSearchCV(
+  estimator=pipe,
+  param_grid=param_grid,
+  scoring='accuracy',
+  cv=7,
+  verbose=2
+)
+
+grid_search.fit(xtrain, ytrain)
+
+ypred = grid_search.predict(xtest)
+print(accuracy_score(ytest, ypred))
+```
