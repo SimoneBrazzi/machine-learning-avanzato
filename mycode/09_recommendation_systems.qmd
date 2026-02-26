@@ -1,0 +1,563 @@
+---
+title: "Recommendation Systems"
+author: "Simone Brazzi"
+execute:
+  eval: true
+
+format:
+  html:
+    theme:
+      dark: darkly
+      light: flatly
+    toc: true 
+---
+
+# Theory 
+
+Objects have *profiles*: recommendation depends on these charateristics.
+
+*User profile*: numeric representation about user interests. It is used to compare and measure similarity with new objects.
+
+## TF-Iratings
+
+*TF-Iratings* is a statistical method useful for NLP, but also here.
+
+- *Term Frequency*, term t frequency in a document d.
+
+$TF(t, d) = \frac{n\ term\ t\ in\ document\ d}{total\ terms\ in\ document\ d}$
+
+- *Inverse Document Frequency*, term t value depends on the frequency of it in the documents.
+
+$Iratings(t, D) = \log{ \frac{total\ n\ of\ documents\ in\ corpus\ D }{n\ of\ documents\ containing\ term\ t} }$
+
+$w_{ij} = TF_{ij} x Iratings_{ij}$
+
+w is the weight of the term: an high value means the term is frequent in a docuemnt and that it is rare in the corpus.
+
+## Cosine similarity
+
+This measueres the similarity, here between the user profile *x* and the element profile *i*.
+
+$u(x, i) = \cos(x, i) = \frac{x \dot i}{|x| \dot |i|}$
+
+1 = max similarity.
+0 = no similarity.
+
+# Practice
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import cosine
+import seaborn as sns
+from sqlalchemy import column
+from sqlalchemy.engine import result
+import tensorflow as tf
+from tensorflow.python.ops.sort_ops import _ascending_sort
+import tensorflow_datasets as tfds
+
+ratings = tfds.load("movielens/100k-ratings", split="train")
+cols = ['user_id', 'movie_id', 'user_rating', 'timestamp']
+ratings = pd.DataFrame(tfds.as_dataframe(ratings)[cols])
+ratings.head()
+```
+
+
+```{python}
+movies, movies_info = tfds.load(
+  "movielens/100k-movies",
+  split="train",
+  with_info=True,
+  as_supervised=False
+)
+movies = pd.DataFrame(tfds.as_dataframe(movies))
+genre_labels = movies_info.features['movie_genres'].feature.names
+movies['movie_genres'] = movies.movie_genres.apply(
+  lambda indicies : [genre_labels[i] for i in indicies]
+)
+```
+
+
+```{python}
+freqs = pd.DataFrame(ratings.user_rating.value_counts()).reset_index()
+freqs
+
+sns.barplot(x='user_rating', y='count', hue='user_rating', palette='viridis', data=freqs)
+plt.show()
+```
+
+```{python}
+df = movies.merge(ratings).drop("timestamp", axis=1)
+df.head()
+
+df['movie_id'] = df.movie_id.astype('str')
+df['movie_title'] = df.movie_title.astype('str')
+df['user_id'] = df.user_id.astype('str')
+df.head()
+```
+
+```{python}
+dfg = df.groupby(['movie_id', 'movie_title']).agg(
+  n_views=('movie_id', 'count'),
+  rat_avg=('user_rating', 'mean'),
+  movie_genres=('movie_genres', 'first')
+)
+
+k = 0.8
+# calculate a score based on the standardized n views and avg rating, iwith a greater weight assigned to avg rating
+dfg['score'] = (1-k) * (dfg.n_views / dfg.n_views.max()) + k * (dfg.rat_avg / dfg.rat_avg.max())
+dfg = dfg.sort_values('score', ascending=False).reset_index()
+dfg.head() 
+```
+
+## User and object profiles
+
+
+```{python}
+from sklearn.preprocessing import MultiLabelBinarizer # alternative to ohe which asccept multiple labels
+
+movies['movie_id'] = movies.movie_id.astype('int')
+movies = movies.sort_values(by='movie_id', ascending=True)
+mlb = MultiLabelBinarizer()
+genres_encoded = mlb.fit_transform(movies.movie_genres)
+
+item_profiles = pd.DataFrame(genres_encoded, columns=mlb.classes_, index=movies.movie_id)
+item_profiles.head()
+```
+
+Now for the user profile, lets take the user id 1 for example.
+
+```{python}
+ratings[['user_id', 'movie_id']] = ratings[['user_id', 'movie_id']].astype('int')
+user_id = 1
+user_ratings = ratings[ratings.user_id == user_id]
+user_ratings = user_ratings.sort_values(by='movie_id')
+user_ratings.head()
+```
+
+This is the movies and the ratings the user id 1 has. The user profile is calculated as a scalar product between the user rating to a movie and movie genres, meaning using the item profiles created before.
+
+```{python}
+user_ratings.user_rating
+item_profiles.loc[user_ratings.movie_id]
+
+user_profile = np.dot(user_ratings.user_rating, item_profiles.loc[user_ratings.movie_id]) / user_ratings.user_rating.sum()
+```
+
+user_profile is the matrix of the weights. Now a better visualization of this weight with the movie genre.
+
+
+```{python}
+profile_series = pd.Series(user_profile, index=item_profiles.columns).round(2).astype('float').sort_values(ascending=False)
+
+profile_series.to_dict()
+```
+
+```{python}
+from sklearn.metrics.pairwise import cosine_similarity
+
+similarities = cosine_similarity([user_profile], item_profiles)[0]
+
+recommendations = pd.DataFrame({"movie_id" : item_profiles.index, "similarity" : similarities}).sort_values(by="similarity", ascending=False)
+recommendations
+```
+For each movie id, we have the similarity score for the user, based on its weights. Lets remove the already seen movies.
+
+
+```{python}
+seen = set(user_ratings.movie_id)
+recommendations = recommendations[recommendations.movie_id.isin(seen) == False]
+recommendations.merge(movies, on="movie_id").head(10)
+```
+
+## TF-IDF implementation
+
+
+```{python}
+from sklearn.feature_extraction.text import TfidfVectorizer
+from itertools import combinations
+
+movies['movie_title'] = movies.movie_title.astype('str')
+tf = TfidfVectorizer(analyzer=lambda x : (c for i in range(1, 4) for c in combinations(x, r=i)) )
+tfidf_matrix = tf.fit_transform(movies.movie_genres)
+tfidf_df = pd.DataFrame(tfidf_matrix.todense(), columns=tf.get_feature_names_out(), index=movies.movie_title)
+tfidf_df.sample(10, axis=1).sample(10, axis=0)
+
+
+movies[movies.movie_title.str.contains('Oz')]
+```
+
+```{python}
+a = tfidf_df.loc['Wizard of Oz, The (1939)',:].reset_index()
+a[a['Wizard of Oz, The (1939)'] > 0]
+```
+
+Now the cosine similarity.
+e
+```{python}
+cosine_sim = cosine_similarity(tfidf_df)
+cosine_sim_df = pd.DataFrame(cosine_sim, index=movies.movie_title, columns=movies.movie_title)
+cosine_sim_df.sample(5, axis=1).sample(5, axis=0)
+```
+
+
+```{python}
+cosine_sim_df['Toy Story (1995)'].sort_values(ascending=False).head(10)
+```
+
+```{python}
+def genre_recommendations(title, M, items, k=10):
+  """
+  Giving a title, it returns 10 similart movies
+  """
+
+  ix = M[title].to_numpy().argpartition(range(-1, -k, -1))
+  closest = M.columns[ix[-1:(k+2):-1]]
+  closest = closest.drop(title, errors='ignore')
+  return pd.DataFrame(closest).merge(items[['movie_title', 'movie_genres']]).head(k)
+
+genre_recommendations(title='Toy Story (1995)', M=cosine_sim_df, items=movies[['movie_title', 'movie_genres']])
+
+```
+
+There it is.
+
+# Exercise
+
+```{python}
+import tensorflow_datasets as tfds
+import pandas as pd
+import numpy as np
+from numpy.linalg import norm
+
+ds, info = tfds.load('movielens/100k-ratings', split='train', with_info=True)
+ratings = tfds.as_dataframe(ds)
+ratings[['movie_id', 'movie_title', 'user_id', 'user_occupation_text', 'user_zip_code']] = ratings[['movie_id', 'movie_title', 'user_id', 'user_occupation_text', 'user_zip_code']].astype('str')
+ratings['movie_id'] = ratings.movie_id.astype('int')
+ratings['user_id'] = ratings.user_id.astype('int')
+movie_genres = info.features['movie_genres'].feature.names
+
+def decode_movie_genres(genre_indicies):
+  
+  return [movie_genres[i] for i in genre_indicies]
+
+
+ratings['movie_genres'] = ratings.movie_genres.apply(decode_movie_genres)
+ratings = ratings[['movie_id', 'user_id', 'user_rating']]
+ratings.head()
+ratings.info()
+```
+
+```{python}
+ds_movies, info_movies = tfds.load('movielens/100k-movies', split='train', with_info=True)
+movies = tfds.as_dataframe(ds_movies)
+movies[['movie_id', 'movie_title']] = movies[['movie_id', 'movie_title']].astype('str')
+movies['movie_id'] = movies.movie_id.astype('int')
+movies['movie_genres'] = movies.movie_genres.apply(decode_movie_genres)
+movies = movies.sort_values(by='movie_id').reset_index().drop('index', axis=1)
+movies.head()
+movies.info()
+```
+
+```{python}
+df = pd.merge(movies, ratings, on='movie_id')
+df.head()
+```
+
+```{python}
+movie_genres = info_movies.features['movie_genres'].feature.names
+movie_genres
+
+unique_genres = sorted(list(set([genre for row in movies.movie_genres for genre in row])))
+unique_genres
+```
+
+```{python}
+movies_profile = pd.DataFrame(
+  index = movies.movie_id.sort_values(),
+  columns=unique_genres,
+  dtype='int32'
+)
+movies_profile.head(5)
+movies_profile.info()
+```
+
+```{python}
+for i, j in zip(movies.movie_id, movies.movie_genres):
+  for genre in j:
+    if genre in movies_profile.columns:
+      movies_profile.loc[i, genre] = 1
+
+movies_profile = movies_profile.fillna(value=0)
+movies_profile.head()
+```
+
+```{python}
+user_id = 1
+u = ratings[ratings.user_id == 1]
+u = u.sort_values(by='movie_id').set_index(keys='movie_id')
+```
+
+```{python}
+pd.merge(u, movies_profile, how='inner', on='movie_id')
+```
+
+```{python}
+user_movies = movies_profile[movies_profile.index.isin(u.index.to_list())]
+
+user_profile = np.dot(np.array(u.user_rating).reshape(1, -1), np.matrix(user_movies)) / np.sum(u.user_rating)
+
+user_profile = pd.DataFrame(data=user_profile, columns=movies_profile.columns)
+
+user_profile.sort_values(by=0, axis=1, ascending=False)
+```
+
+```{python}
+cosine_similarity = np.dot(movies_profile, user_profile.T) / np.dot( norm(movies_profile, axis=1), norm(user_profile.T) )
+cosine_similarity.shape
+```
+
+so the norm is the magnitude, the length of the vector for each movie, based on the genre. I will also calculate the user profile norm, which in this case is by user considering the genres. it is just by user, because it is based on the dot product avg calculated considering the movies the user rated, so it is the avg for each genre.
+
+Movie norm → row-wise (1682,) — one magnitude per movie vector
+User norm → single number — magnitude of the single user profile vector
+
+
+
+```{python}
+cosine_similarity = np.dot(movies_profile, user_profile.T) / (norm(movies_profile, axis=1, keepdims=True) * norm(user_profile.T))
+cosine_similarity.shape
+cosine_similarity = pd.DataFrame(data=cosine_similarity, index=movies_profile.index, columns=['cosine_similarity'])
+cosine_similarity.head()
+
+recommendation_top10 = cosine_similarity[~cosine_similarity.index.isin(u.index.to_list())].sort_values(by='cosine_similarity', ascending=False).head(10)
+
+recommendation_top10.join(movies.set_index('movie_id')[['movie_title', 'movie_genres']])
+```
+
+## MLOps
+
+```{python}
+import pandas as pd
+import numpy as np
+from numpy.linalg import norm
+from sklearn.preprocessing import MultiLabelBinarizer
+
+
+class ContentBasedRecommender:
+
+    def __init__(
+        self,
+        movies: pd.DataFrame,
+        ratings: pd.DataFrame,
+        genre_col='movie_genres',
+        movie_id_col='movie_id',
+        movie_title_col='movie_title'
+    ):
+        self.movies = movies
+        self.ratings = ratings
+
+        if genre_col not in movies.columns:
+            raise ValueError(f"Column '{genre_col}' not found in movies dataframe.")
+        self.movie_genre = genre_col
+
+        if movie_id_col not in movies.columns:
+            raise ValueError(f"Column '{movie_id_col}' not found in movies dataframe.")
+        self.movie_id = movie_id_col
+
+        if movie_title_col not in movies.columns:
+            raise ValueError(f"Column '{movie_title_col}' not found in movies dataframe.")
+        self.movie_title = movie_title_col
+
+        self.mlb = MultiLabelBinarizer()
+        self.movies_profile = None
+        self.unique_genres = None
+        self.similarity_matrix = None
+
+    def fit(self):
+        """
+        Builds the movie_profile and unique_genres.
+
+        Returns:
+            self : enables method chaining.
+
+        Sets:
+            self.unique_genres (np.ndarray) : genre classes from MultiLabelBinarizer.
+            self.movies_profile (pd.DataFrame) : index=movie_id, columns=unique_genres.
+        """
+        results = self.mlb.fit_transform(self.movies[self.movie_genre])
+        self.unique_genres = self.mlb.classes_
+        self.movies_profile = pd.DataFrame(
+            data=results,
+            index=self.movies[self.movie_id],
+            columns=self.mlb.classes_
+        )
+        return self
+
+    def _build_user_profile(self, user_id):
+        """
+        Internal method that calculates the user profile for a single user.
+        Not stored as instance state to avoid memory issues with large user bases.
+
+        Args:
+            user_id (int) : user id value in the ratings dataframe.
+
+        Returns:
+            user_profile (pd.DataFrame) : weighted average genre vector for the user.
+            user (pd.DataFrame) : filtered ratings for this user, indexed by movie_id.
+        """
+        if user_id not in self.ratings.user_id.values:
+            raise ValueError(f"User '{user_id}' not found in ratings dataframe.")
+
+        user = self.ratings[self.ratings.user_id == user_id]
+        user = user.sort_values(by=self.movie_id).set_index(keys=self.movie_id)
+
+        user_movies = self.movies_profile[self.movies_profile.index.isin(user.index)]
+
+        if len(user_movies) == 0:
+            raise ValueError(f"User '{user_id}' has no rated movies in the dataset.")
+
+        user_profile = (
+            np.dot(
+                np.array(user.user_rating).reshape(1, -1),
+                np.array(user_movies)
+            )
+            /
+            np.sum(user.user_rating)
+        )
+
+        user_profile = pd.DataFrame(
+            data=user_profile,
+            columns=self.movies_profile.columns
+        )
+
+        return user_profile, user
+
+    def recommend(self, user_id, top_n=10):
+        """
+        Generates top N movie recommendations for one or more users.
+
+        Args:
+            user_id (int or list or np.ndarray) : single user id or list of user ids.
+            top_n (int) : number of recommendations to return per user. Default 10.
+
+        Returns:
+            recommendations (pd.DataFrame) : top N recommendations with similarity scores,
+                movie titles, genres, and user_id for each user.
+        """
+        if not isinstance(user_id, (list, np.ndarray)):
+            user_id = [user_id]
+
+        recommendations = pd.DataFrame()
+
+        for id in user_id:
+            user_profile, user = self._build_user_profile(user_id=id)
+
+            cos_similarity = (
+                np.dot(self.movies_profile, user_profile.T)
+                /
+                (norm(self.movies_profile, axis=1, keepdims=True) * norm(user_profile.T))
+            )
+
+            cos_similarity = pd.DataFrame(
+                data=cos_similarity,
+                index=self.movies_profile.index,
+                columns=['similarity_scores']
+            )
+
+            recommendation = (
+                cos_similarity[~cos_similarity.index.isin(user.index)]
+                .sort_values(by='similarity_scores', ascending=False)
+                .head(top_n)
+            )
+
+            recommendation = recommendation.join(
+                self.movies.set_index(self.movie_id)[[self.movie_title, self.movie_genre]]
+            )
+
+            recommendation['user_id'] = id
+
+            recommendations = pd.concat([recommendations, recommendation], axis=0)
+
+        return recommendations
+```
+
+```{python}
+import tensorflow_datasets as tfds
+import pandas as pd
+import numpy as np
+from numpy.linalg import norm
+
+ds, info = tfds.load('movielens/100k-ratings', split='train', with_info=True)
+ratings = tfds.as_dataframe(ds)
+ratings[['movie_id', 'movie_title', 'user_id', 'user_occupation_text', 'user_zip_code']] = ratings[['movie_id', 'movie_title', 'user_id', 'user_occupation_text', 'user_zip_code']].astype('str')
+ratings['movie_id'] = ratings.movie_id.astype('int')
+ratings['user_id'] = ratings.user_id.astype('int')
+movie_genres = info.features['movie_genres'].feature.names
+
+ratings['timestamp'] = pd.to_datetime(ratings.timestamp, unit='s')
+
+def decode_movie_genres(genre_indicies):
+  
+  return [movie_genres[i] for i in genre_indicies]
+
+
+ratings['movie_genres'] = ratings.movie_genres.apply(decode_movie_genres)
+ratings = ratings[['movie_id', 'user_id', 'user_rating', 'timestamp']]
+
+ds_movies, info_movies = tfds.load('movielens/100k-movies', split='train', with_info=True)
+movies = tfds.as_dataframe(ds_movies)
+movies[['movie_id', 'movie_title']] = movies[['movie_id', 'movie_title']].astype('str')
+movies['movie_id'] = movies.movie_id.astype('int')
+movies['movie_genres'] = movies.movie_genres.apply(decode_movie_genres)
+movies = movies.sort_values(by='movie_id').reset_index().drop('index', axis=1)
+
+```
+
+```{python}
+recommender = ContentBasedRecommender(movies=movies, ratings=ratings)
+recommender.fit()
+user_id = 1
+recommendations = recommender.recommend(user_id=user_id, top_n=10)
+recommendations
+```
+
+```{python}
+df = pd.merge(recommender.ratings, recommender.movies, how='left', on='movie_id')
+recommender.ratings.info()
+
+
+k = df[(df.user_id == user_id) & (df.user_rating >= 3.5)].movie_id.to_list()
+recommendent = recommendations.index.to_list()
+```
+
+```{python}
+relevant = ['A', 'B', 'C', 'D', 'E']
+recommended = ['A', 'C', 'F', 'G', 'H']
+
+[x for x in recommended if x in relevant]
+
+dcgk = []
+
+for i,j in enumerate(recommended):
+
+  rel_i = 1 if j in relevant else 0
+  dcgk.append(rel_i / np.log2(i+1 + 1))
+
+
+idcg = np.sum([1/np.log2(i+1 + 1) for i, j in enumerate(recommended)])
+
+ndcg = np.sum(dcgk) / idcg
+
+```
+
+```{python}
+recommender.ratings = recommender.ratings.set_index('timestamp').sort_values(by='timestamp')
+
+recommender.ratings.groupby(['user_id', 'timestamp']).agg(
+  movie_id=("movie_id", "first")
+)
+
+
+```
