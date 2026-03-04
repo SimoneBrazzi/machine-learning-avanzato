@@ -48,7 +48,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 
-from skimage import data, color
+from skimage import data, color, feature, transform
+
+
+def plot_img(img):
+  
+  plt.figure(figsize=(12, 10))
+  plt.imshow(img)
+  plt.show()
 ```
 
 `skimage` has the implementation of the integral image algorithm and the HAAR like features cited in the original paper.
@@ -66,6 +73,39 @@ def extract_feature_image(img, feature_type, feature_coord=None):
         feature_type=feature_type,
         feature_coord=feature_coord,
     )
+```
+
+```{python}
+image = ski.data.astronaut()
+
+plt.figure(figsize=(12, 10))
+plt.imshow(image)
+plt.show()
+```
+
+Using pretrained images from opencv where the data are .xml.
+
+```{python}
+img_xml = ski.data.lbp_frontal_face_cascade_filename()
+type(img_xml)
+img_xml
+```
+
+`skimage` also has the possibility to calculate the MB-LBP and the LBP.
+
+```{python}
+type(image)
+image.shape
+
+integral_img = transform.integral_image(image)
+type(integral_img)
+integral_img.shape
+# plot_img(integral_img)
+
+
+```
+
+```{python}
 ```
 
 ```{python}
