@@ -553,11 +553,31 @@ ndcg = np.sum(dcgk) / idcg
 ```
 
 ```{python}
-recommender.ratings = recommender.ratings.set_index('timestamp').sort_values(by='timestamp')
+```
 
-recommender.ratings.groupby(['user_id', 'timestamp']).agg(
-  movie_id=("movie_id", "first")
+
+```{python}
+test = (
+  recommender.ratings
+  .sort_values(by=['user_id', 'timestamp'])
+  .groupby('user_id')
+  .apply(lambda x: x.tail(max(1, int(len(x) * 0.2))), include_groups=False)
+  .reset_index(level=0)  # restore user_id column
+  .sort_values(by=['user_id', 'timestamp'], ascending=[True, True])
 )
+train = recommender.ratings[~recommender.ratings.index.isin(test.index)]
+```
 
+
+```{python}
+train.shape, test.shape
+train.head(), test.head()
+
+
+test[test.user_id == 1]
+train[train.user_id == 1]
+```
+
+```{python}
 
 ```
