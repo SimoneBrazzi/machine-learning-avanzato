@@ -1,0 +1,109 @@
+---
+title: "Real-Time Face Detection"
+format:
+  html:
+    theme:
+      dark: darkly
+      light: lightly
+    toc: true
+
+---
+
+# Intro
+
+Real time face detection has a long history, which nowadays has Deep Learning as the main method. The most famous contribution comes from the [Viola-Jones "Robust Real-Time Face Detection"](https://faculty.cc.gatech.edu/~hic/CS7616/Papers/Viola-Jones-2004.pdf). Even if it has more than 20 years, it is still relevant, expecially for the Computer Vision which relies on Machine Learning.
+The paper has 3 main contributions:
+
+## 1. Integral Image
+
+It is an image represetation that allows for a very fast feature evalaution.
+
+## 2. AdaBoost learning algorithm
+
+This classifier can be viewed as a *feature selection process*, achieved using the AdaBoost learning algorithm by constraining each weak classifier to depend on only a single feature.
+
+## 3. Cascade
+
+It is a method for combining successively more complex clasifiers in a cascade structure. Complex processing is reserved only for the promising regions in which a face might occur. The key measure is the *false negative rate* of the attentional process. The structure of the cascaded detection process is the same of a degenerate decision tree.
+
+## Notes
+
+The project is limited to a Machine Learning approach. I would like to use the [YuNet](https://link.springer.com/content/pdf/10.1007/s11633-023-1423-y.pdf) Deep Learning model, which is lightweight Deep Learning framework developed to run on edge devices. Also, [Raspberry Pi](https://www.raspberrypi.com/documentation/accessories/ai-camera.html) has a camera sensor which allows users to deploy their own neural network models.
+
+# Dev
+
+Even if the pa
+
+An useful example is the `skimage` documentation, specifically the example [Face classification using Haar-like feature descriptor](https://scikit-image.org/docs/stable/auto_examples/applications/plot_haar_extraction_selection_classification.html).
+
+```{python}
+from time import time
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import skimage as ski
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import roc_auc_score
+
+from skimage import data, color
+```
+
+`skimage` has the implementation of the integral image algorithm and the HAAR like features cited in the original paper.
+
+```{python}
+def extract_feature_image(img, feature_type, feature_coord=None):
+    """Extract the haar feature for the current image"""
+    ii = ski.transform.integral_image(img)
+    return ski.feature.haar_like_feature(
+        ii,
+        0,
+        0,
+        ii.shape[0],
+        ii.shape[1],
+        feature_type=feature_type,
+        feature_coord=feature_coord,
+    )
+```
+
+```{python}
+images = ski.data.lfw_subset()
+# To speed up the example, extract the two types of features only
+feature_types = ['type-2-x', 'type-2-y']
+
+# Compute the result
+t_start = time()
+X = [extract_feature_image(img, feature_types) for img in images]
+X = np.stack(X)
+time_full_feature_comp = time() - t_start
+
+# Label images (100 faces and 100 non-faces)
+y = np.array([1] * 100 + [0] * 100)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, train_size=150, random_state=0, stratify=y
+)
+
+# Extract all possible features
+feature_coord, feature_type = ski.feature.haar_like_feature_coord(
+    width=images.shape[2], height=images.shape[1], feature_type=feature_types
+)
+```
+
+
+
+
+
+
+
+
+
+### References
+
+::: {#refs}
+Viola, P., Jones, M.J. Robust Real-Time Face Detection. International Journal of Computer Vision 57, 137–154 (2004). https://doi.org/10.1023/B:VISI.0000013087.49260.fb
+
+Wu, Wei & Peng, Hanyang & Yu, Shiqi. (2023). YuNet: A Tiny Millisecond-level Face Detector. Machine Intelligence Research. 20. 10.1007/s11633-023-1423-y.
+:::
