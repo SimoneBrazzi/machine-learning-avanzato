@@ -37,100 +37,85 @@ Even if the pa
 An useful example is the `skimage` documentation, specifically the example [Face classification using Haar-like feature descriptor](https://scikit-image.org/docs/stable/auto_examples/applications/plot_haar_extraction_selection_classification.html).
 
 ```{python}
+from operator import mul
 from time import time
 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import skimage as ski
+from skimage import data, color, feature, transform
+from skimage.feature import multiblock_lbp, draw_multiblock_lbp
+from skimage.transform import integral_image
+from skimage.util import view_as_windows
 
+from sklearn.datasets import fetch_lfw_people
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 
-from skimage import data, color, feature, transform
 
 
-def plot_img(img):
+def plot_img(img, cmap="gray"):
   
   plt.figure(figsize=(12, 10))
-  plt.imshow(img)
+  plt.imshow(img, cmap=cmap)
   plt.show()
 ```
 
-`skimage` has the implementation of the integral image algorithm and the HAAR like features cited in the original paper.
-
 ```{python}
-def extract_feature_image(img, feature_type, feature_coord=None):
-    """Extract the haar feature for the current image"""
-    ii = ski.transform.integral_image(img)
-    return ski.feature.haar_like_feature(
-        ii,
-        0,
-        0,
-        ii.shape[0],
-        ii.shape[1],
-        feature_type=feature_type,
-        feature_coord=feature_coord,
-    )
+lfw = fetch_lfw_people(color=False)
+img = lfw.images[0]
+img.shape
+plot_img(img)
 ```
 
-```{python}
-image = ski.data.astronaut()
 
-plt.figure(figsize=(12, 10))
-plt.imshow(image)
+Plot the center in the image as reference. This should be also the center for the MB-LBP.
+```{python}
+plt.figure(figsize=(10, 12))
+plt.imshow(img, cmap="gray")
+plt.scatter(x=img.shape[1]/2, y=img.shape[0]/2, color='red', s=50)
 plt.show()
 ```
 
-Using pretrained images from opencv where the data are .xml.
+Test the MB-LBP on the image and plot it.
 
 ```{python}
-img_xml = ski.data.lbp_frontal_face_cascade_filename()
-type(img_xml)
-img_xml
-```
+ii = integral_image(img)
 
-`skimage` also has the possibility to calculate the MB-LBP and the LBP.
-
-```{python}
-type(image)
-image.shape
-
-integral_img = transform.integral_image(image)
-type(integral_img)
-integral_img.shape
-# plot_img(integral_img)
-
-
-```
-
-```{python}
-```
-
-```{python}
-images = ski.data.lfw_subset()
-# To speed up the example, extract the two types of features only
-feature_types = ['type-2-x', 'type-2-y']
-
-# Compute the result
-t_start = time()
-X = [extract_feature_image(img, feature_types) for img in images]
-X = np.stack(X)
-time_full_feature_comp = time() - t_start
-
-# Label images (100 faces and 100 non-faces)
-y = np.array([1] * 100 + [0] * 100)
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, train_size=150, random_state=0, stratify=y
+lbp_code = multiblock_lbp(
+  int_image=ii,
+  r=0,
+  c=0,
+  width=9,
+  height=9,
 )
 
-# Extract all possible features
-feature_coord, feature_type = ski.feature.haar_like_feature_coord(
-    width=images.shape[2], height=images.shape[1], feature_type=feature_types
+draw_mblbp = draw_multiblock_lbp(
+  image=img,
+  r=0,
+  c=0,
+  width=9,
+  height=9,
+  lbp_code=lbp_code
 )
+plot_img(draw_mblbp)
 ```
+
+This image show that there is the need of a slide window function. `skimage.util.view_as_windows()` can do the job. The idea is to have non overlapping square which goes on the full image.
+
+```{python}
+window = view_as_windows(img, (9, 9), step=1)
+
+window.shape
+
+```
+
+
+
+
+
 
 
 
