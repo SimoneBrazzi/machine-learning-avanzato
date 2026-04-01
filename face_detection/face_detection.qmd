@@ -38,8 +38,224 @@ An useful example is the `skimage` documentation, specifically the example [Face
 
 ```{python}
 from operator import mul
+from os import write
 from time import time
 
+import datasets
+import matplotlib
+from matplotlib.patches import Patch
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from pyarrow import float16
+from scipy.spatial import Rectangle
+import skimage as ski
+from skimage import data, color, feature, transform
+from skimage.feature import multiblock_lbp, draw_multiblock_lbp
+from skimage.transform import integral_image
+from skimage.util import view_as_windows
+
+from sklearn.datasets import fetch_lfw_people
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import roc_auc_score
+from tensorflow import train
+from tensorflow.python.ops.batch_ops import batch
+
+
+
+def plot_img(img, cmap="gray"):
+  
+  plt.figure(figsize=(12, 10))
+  plt.imshow(img, cmap=cmap)
+  plt.show()
+```
+
+Plot an image as example. It is a face.
+
+```{python}
+lfw = fetch_lfw_people(color=False)
+img = lfw.images[0]
+img.shape
+plot_img(img)
+```
+
+
+# TRAIN POSITIVE SAMPLES
+
+```{python}
+faces = lfw.images
+# take 1000 samples from the 13k without replacement
+xtrain_pos = faces[np.random.choice(faces.shape[0], size=1000, replace=False)]
+ytrain_pos = np.ones(shape=(xtrain_pos.shape[0], ), dtype=np.uint8)
+xtrain_pos.shape, ytrain_pos.shape
+
+
+```
+
+
+```{python}
+def compute_mblbp_features(image, side=3, window_size=20):
+  """
+  Compute the mblbp as in the paper Face Detection Based on Multi-Block LBP Representation
+  """
+
+  # calculate integral image
+  ii = integral_image(image)
+  # calculate the floow division of the maximum rectangle side size
+  s = window_size // side
+  features = []
+
+  # iterate over all the combinations of sub-window and local rectangle
+  for w in range(1, s + 1):
+    for h in range(1, s + 1):
+      for r in range(0, window_size - side*w + 1):
+        for c in range(0, window_size - side*h + 1):
+          lbp_code = multiblock_lbp(
+            int_image=ii,
+            r=r,
+            c=c,
+            width=w,
+            height=h
+          )
+          features.append(lbp_code)
+
+  return np.array(features)
+
+# xtrain as pos + neg
+# features = np.vstack([compute_mblbp_features(i) for i in xtrain])
+```
+
+
+## Datasets
+
+Not only there is the need to create a train and test dataset, but also get the labels to create a face and non face split inside both. Also, following the papers, the non face labels is 3 times the faces in the test, while they have the same proportion in the train one.
+
+Hugging Faces enables to download or stream the data. A useful dataset with both faces and non faces and labels is the `coco` dataset from Microsoft, created fortunatly for object detection and open source. This means it can be used also for commercial use: this part is important for the task.
+
+
+Get only the train split.
+
+```{python}
+from datasets import load_dataset
+ds = load_dataset("detection-datasets/coco", split='train')
+ds.features
+```
+
+Now, from COCO dataset I need both the train_neg and the test images. From the paper, for train the ratio pos:neg is 1:1, while in test is 1:3.
+
+From COCO so I should take 1k non person category images for train and be sure not to contaminate the test set with them; for test, I need 1k images which have person ad 3k without person. The 1k with person is from COCO to simulate how the digital camera will work.
+
+
+```{python}
+from time import time
+
+tic = time()
+ds_faces = ds.filter(lambda row : int(1) in row['objects']['category'], num_proc=4).select(range(2000))
+toc = time()
+print(f"Elapsed time: {toc-tic}")
+
+ds_non_faces = ds.filter(lambda row : int(0) not in row['objects']['category'], num_proc=4).select(range(5000))
+rgb2gray(ds['train']['image'[0])
+rgb2gray(ds['train']['image'[0])
+# ds_faces.features
+# flatten to columns
+ds_faces_flat = ds_faces.flatten()
+# select only useful one for object detection
+ds_faces_small = ds_faces_flat.select_columns(['image', 'objects.category'])
+# convert images from PIL to np.arrays
+x_faces = [np.array(i) for i in ds_faces_small['image']]
+# assign 1 for face label 
+y_faces = [int(1) for i in ds_faces_small['objects.category']]
+
+ds_faces.shape
+ds_non_faces.shape
+
+```
+
+
+```{python}
+def make_x_y(positive, negative, target_size=(480, 640)):
+    ds_pos = positive.flatten().select_columns(['image', 'objects.category'])
+    x_pos = [np.array(i.convert('L').resize(target_size)) for i in ds_pos['image']]
+    y_pos = [int(1) for _ in ds_pos['objects.category']]
+
+    ds_neg = negative.flatten().select_columns(['image', 'objects.category'])
+    x_neg = [np.array(i.convert('L').resize(target_size)) for i in ds_neg['image']]
+    y_neg = [int(-1) for _ in ds_neg['objects.category']]
+
+    x = np.array(x_pos + x_neg)
+    y = np.array(y_pos + y_neg)
+    return x, y
+
+tic = time()
+x, y = make_x_y(ds_faces, ds_non_faces)
+toc = time()
+print(f"Elapsed time: {toc - tic}")
+# plot_img(x[0])
+x.shape
+y.shape
+```
+
+Now, this is a dataset with faces which are in a bigger picture, which simulate what the digital camera will see.
+
+To train the model, instead, there is the need of a just faces dataset.
+
+```{python}
+neg_idxs = np.where(y == -1)[0] # 5k values
+sampled_idxs = np.random.choice(neg_idxs, size=1000, replace=False)
+xtrain_neg = x[sampled_idxs]
+ytrain_neg = y[sampled_idxs]
+
+xtest = np.delete(x, sampled_idxs)
+ytest = np.delete(y, sampled_idxs)
+
+```
+
+
+## Gentle AdaBoost implementation
+
+Gentle AdaBoost uses adptive Newton steps for minimizing the cost function $J = E[\expˆ{-yF(x)}]$, which corresponds to minmimizing a weighted squared error at each step.
+
+
+
+```{python}
+xtrain_pos.shape, xtrain_neg.shape
+```
+
+
+```{python}
+# step 1
+N = features.shape[0] # len of the set of training example
+w = np.full(shape=N, fill_value=1/N, dtype=np.float64) # array of weights
+
+branches = 256 # branches of the AdaBoost. hyuperparameter
+M = 100 # hyper parameter. number of weak classifiers
+
+# step 2 -> gentle adaboost algorithm
+
+# for each weak learner to train
+for m in range(M):
+  # for each feature/column in the features matrix
+  for k in range(features.shape[1]):
+    # calculate the LUT a_j, split in num and den
+    numerator = np.bincount(features[:, k], weights=w*y, minlength=branches)
+    denominator = np.bincount(features[:, k], weights=w, minlength=branches)
+    a_j = numerator / denominator
+
+features.shape[1]
+```
+
+
+# Reimplementation using wider faces
+
+
+```{python}
+from operator import mul
+from os import write
+from time import time
+
+import datasets
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -61,56 +277,223 @@ def plot_img(img, cmap="gray"):
   plt.figure(figsize=(12, 10))
   plt.imshow(img, cmap=cmap)
   plt.show()
+
+
+def compute_mblbp_features(image, side=3, window_size=20):
+  """
+  Compute the mblbp as in the paper Face Detection Based on Multi-Block LBP Representation
+  """
+
+  # calculate integral image
+  ii = integral_image(image)
+  # calculate the floow division of the maximum rectangle side size
+  s = window_size // side
+  features = []
+
+  # iterate over all the combinations of sub-window and local rectangle
+  for w in range(1, s + 1):
+    for h in range(1, s + 1):
+      for r in range(0, window_size - side*w + 1):
+        for c in range(0, window_size - side*h + 1):
+          lbp_code = multiblock_lbp(
+            int_image=ii,
+            r=r,
+            c=c,
+            width=w,
+            height=h
+          )
+          features.append(lbp_code)
+
+  return np.array(features)
+
+# xtrain as pos + neg
+# features = np.vstack([compute_mblbp_features(i) for i in xtrain])
+```
+
+
+```{python}
+from datasets import load_dataset
+
+ds = load_dataset("HosseinGT/wider_face_background")
+ds = ds.with_format('numpy')
+ds['train']['faces'].features
 ```
 
 ```{python}
-lfw = fetch_lfw_people(color=False)
-img = lfw.images[0]
+from skimage.transform import resize
+from skimage.color import rgb2gray
+from matplotlib.patches import Rectangle
+
+img = color.rgb2gray(ds['train'][0]['image'])
+
+bbox = ds['train'][0]['faces']['bbox'][0]
+x, y, w, h = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+x, y, w, h
+fig, axs = plt.subplots(figsize=(12, 10))
+rect = Rectangle(
+  xy=(x, y),
+  width=w,
+  height=h,
+  linewidth=2,
+  edgecolor="red",
+  facecolor="none"
+)
+axs.imshow(img, cmap='gray')
+axs.add_patch(rect)
+plt.axis('off')
+plt.show()
+
 img.shape
-plot_img(img)
 ```
 
+Plot just the face in the bound.
 
-Plot the center in the image as reference. This should be also the center for the MB-LBP.
 ```{python}
-plt.figure(figsize=(10, 12))
-plt.imshow(img, cmap="gray")
-plt.scatter(x=img.shape[1]/2, y=img.shape[0]/2, color='red', s=50)
+fig, axs = plt.subplots(figsize=(12, 10))
+im = axs.imshow(img, cmap='gray')
+patch = Rectangle(
+  xy=(x,y),
+  width=w,
+  height=h,
+  transform=axs.transData
+)
+im.set_clip_path(patch)
+axs.axis('off')
 plt.show()
 ```
 
-Test the MB-LBP on the image and plot it.
+Crop images. The paper says 24x24, so it could be good to implement it instead of 48x48, which is more human comprehensible. Also, doing so, the window is going to be the same size of the image, while the inside square pattern window could be of different dimensions. This could need an update of the function which alread works.
 
 ```{python}
-ii = integral_image(img)
+img_crop = img[y:y+h, x:x+w]
+# O=(x, y)=(449, 330)
 
-lbp_code = multiblock_lbp(
-  int_image=ii,
-  r=0,
-  c=0,
-  width=9,
-  height=9,
-)
-
-draw_mblbp = draw_multiblock_lbp(
-  image=img,
-  r=0,
-  c=0,
-  width=9,
-  height=9,
-  lbp_code=lbp_code
-)
-plot_img(draw_mblbp)
+plot_img(resize(img_crop, (24, 24), anti_aliasing=True, order=3))
 ```
 
-This image show that there is the need of a slide window function. `skimage.util.view_as_windows()` can do the job. The idea is to have non overlapping square which goes on the full image.
+
+Now the idea is to crop each image that has a face using the bounding boxes and resize it. This will create my xtrain_pos dataset.
+
+
+Now I have my train images and the relative bbox. I could create a function which return a train positive dataset with only the faces and a train negative dataset with only the not faces from each images. I could extract a pre-determined number of images, reading from literature. In theory from each image I could extract thousand of negative samples. Lets see.
+Using a huggin faces dataset, images can be yield in batches and appended to a np.array.
+
+
 
 ```{python}
-window = view_as_windows(img, (9, 9), step=1)
+faces = []
+masks = []
+negs = []
+n_faces = 0
 
-window.shape
 
+# for each img and for each bb in the image
+for img, bb in zip(ds['train']['image'][:2], ds['train']['faces']['bbox'][:2]):
+  # convert the img to gray
+  im = color.rgb2gray(img)
+  # create a mask of 1s
+  mask = np.ones(im.shape, dtype=bool)
+  # for each bounding box
+  for b in bb:
+    # get the coordinates (x, y) and the width and height
+    x, y, w, h = int(b[0]),int(b[1]), int(b[2]), int(b[3]) 
+    # filter if the face is too small
+    if w <= 50 or h <= 50:
+      continue
+    # get the face using the coordinates
+    face = im[y:y+h, x:x+w]
+    # resize the face to the (24, 24) size and apply anti_aliasing to keep proportions
+    face = resize(face, (24, 24), anti_aliasing=True, order=3)
+    faces.append(face)
+    n_faces += 1
+    # update the mask so that there are 0s to represent the face and have a pattern to get the negative samples
+    mask[y:y+h, x:x+w] = False
+    # should the mask be appended at this level? I need to have the multiple faces masked, so it is correct.
+    # this also means that masks should be a dict with key an index and value the masks.
+    # This also means maybe it is better to update alse faces to dict? I think not, but lets see.
+    masks.append(mask)
+
+  # get random (x, y) from the img, but outside the masked faces and padded inside the image.
+  # Considering the padding as the (24, 24) image final dimensions 
+
+
+len(faces)
+len(masks)
+n_faces
 ```
+
+```{python}
+import humanize
+from humanize import naturaldelta
+
+
+def get_face(image, bbox, neg_ratio=4, n_attempts=100):
+
+  tic = time()
+  faces = []
+  masks = []
+  negs = []
+
+  # for an image and its bbox(-ex) 
+  for img, bb in zip(image, bbox):
+    im = rgb2gray(img)
+    # convert the img to gray
+    # create a mask of 1 for the entire image
+    mask = np.ones(im.shape, dtype=bool)
+    n_faces = 0
+    for b in bb:
+      # extract the bbox coordinates (x, y) and the (w, h)
+      x, y, w, h = int(b[0]), int(b[1]), int(b[2]), int(b[3])
+      # filter out if the face is less than 10 pixels
+      if w <= 10 or h <= 10:
+        continue
+      # get the face
+      face = im[y:y+h, x:x+w]
+      # resize the face to a (24, 24) image keeping the proportions
+      face = resize(face, (24, 24), anti_aliasing=True, order=3)
+      faces.append(face)
+
+      # update the mask changing 1s to 0s where there is the face
+      mask[y:y+h, x:x+w] = False
+      # update number of faces
+      n_faces += 1
+
+    masks.append(mask)
+    # get the negative samples at random
+    n_negative = n_faces * neg_ratio
+    iterations = n_negative * n_attempts
+    iter = 0
+
+    while iter < iterations:
+      # get O(x, y) coordinates at random and padded to the (24, 24)
+      x_ = np.random.randint(0, im.shape[1] - 24) # column
+      y_ = np.random.randint(0, im.shape[0] - 24) # rows
+      # if the (24, 24) from the random point is only 1s, append as valid negative image
+      if mask[y_:y_+24, x_:x_+24].all():
+        negs.append(im[y_:y_+24, x_:x_+24])
+        iter += 1
+
+  toc = time()
+  print(f"Elapsed time: {naturaldelta(toc - tic)}")
+
+  return faces, masks, negs
+
+faces, masks, negs = get_face(ds['train']['image'][:1000], ds['train']['faces']['bbox'][:1000])
+```
+
+Now I have plenty of faces and negs for train, validation and test sets. I just have to split for these.
+
+```{python}
+x_pos = np.array(faces)
+x_pos.shape
+x_neg = np.array(negs)
+x_neg.shape
+```
+
+
+
+
+
 
 
 
@@ -128,7 +511,31 @@ window.shape
 ### References
 
 ::: {#refs}
-Viola, P., Jones, M.J. Robust Real-Time Face Detection. International Journal of Computer Vision 57, 137–154 (2004). https://doi.org/10.1023/B:VISI.0000013087.49260.fb
+Viila, P., Jones, M.J. Robust Real-Time Face Detection. International Journal of Computer Vision 57, 137–154 (2004). https://doi.org/10.1023/B:VISI.0000013087.49260.fb
 
 Wu, Wei & Peng, Hanyang & Yu, Shiqi. (2023). YuNet: A Tiny Millisecond-level Face Detector. Machine Intelligence Research. 20. 10.1007/s11633-023-1423-y.
+faces.keys()
+
+@article{DBLP:journals/corr/LinMBHPRDZ14,
+  author    = {Tsung{-}Yi Lin and
+               Michael Maire and
+               Serge J. Belongie and
+               Lubomir D. Bourdev and
+               Ross B. Girshick and
+               James Hays and
+               Pietro Perona and
+               Deva Ramanan and
+               Piotr Doll{'{a} }r and
+               C. Lawrence Zitnick},
+  title     = {Microsoft {COCO:} Common Objects in Context},
+  journal   = {CoRR},
+  volume    = {abs/1405.0312},
+  year      = {2014},
+  url       = {http://arxiv.org/abs/1405.0312},
+  archivePrefix = {arXiv},
+  eprint    = {1405.0312},
+  timestamp = {Mon, 13 Aug 2018 16:48:13 +0200},
+  biburl    = {https://dblp.org/rec/bib/journals/corr/LinMBHPRDZ14},
+  bibsource = {dblp computer science bibliography, https://dblp.org}
+}
 :::
